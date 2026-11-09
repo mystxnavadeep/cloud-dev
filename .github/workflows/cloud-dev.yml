@@ -28,6 +28,7 @@ jobs:
       WORKSPACE_DIR: ${{ github.workspace }}/workspace
       SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
+      HAS_TAILSCALE: ${{ secrets.TAILSCALE_AUTHKEY }}
 
     steps:
       - name: Checkout Repository
@@ -63,14 +64,14 @@ jobs:
           ./scripts/setup-cloud-auth.sh
 
       - name: Connect to Tailscale Network (Optional)
-        if: "${{ secrets.TAILSCALE_AUTHKEY != '' }}"
+        if: env.HAS_TAILSCALE != '' && env.HAS_TAILSCALE != 'add'
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           args: --hostname=cloud-dev --accept-routes
 
       - name: Verify Tailscale Connection & Network Identity
-        if: "${{ secrets.TAILSCALE_AUTHKEY != '' }}"
+        if: env.HAS_TAILSCALE != '' && env.HAS_TAILSCALE != 'add'
         run: |
           ./scripts/verify-tailscale.sh
 
