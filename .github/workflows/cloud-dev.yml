@@ -1,0 +1,129 @@
+name: Cloud Development Environment (DeepSeek Harness)
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_duration_minutes:
+        description: 'Session duration in minutes (max 360)'
+        required: false
+        default: '350'
+        type: string
+      force_clean_restore:
+        description: 'Initialize a clean workspace (ignore existing Google Drive backup)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: cloud-dev-session
+  cancel-in-progress: false
+
+jobs:
+  cloud-dev:
+    name: Run DeepSeek Harness Cloud Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      WORKSPACE_DIR: /home/runner/workspace
+      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
+      FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install System Dependencies, rclone & Cloudflared
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq tree curl wget
+
+          echo "Installing rclone..."
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+          echo "Installing Cloudflare Tunnel (cloudflared)..."
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+          sudo dpkg -i /tmp/cloudflared.deb
+          rm -f /tmp/cloudflared.deb
+
+          echo "Setting execution permissions on helper scripts..."
+          chmod +x scripts/*.sh
+
+      - name: Install DeepSeek Harness CLI
+        run: |
+          echo "Installing @deepseek-ai/dsh globally..."
+          npm install -g @deepseek-ai/dsh
+          echo "DeepSeek Harness installed successfully."
+          dsh --version || echo "dsh CLI ready."
+
+      - name: Configure Google Drive Authentication (rclone)
+        env:
+          RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
+        run: |
+          set +x
+          if [ -z "${RCLONE_CONFIG_B64}" ]; then
+            echo "::error::GitHub Secret 'RCLONE_CONFIG_B64' is missing! Please configure it in Repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          mkdir -p "${HOME}/.config/rclone"
+          echo "${RCLONE_CONFIG_B64}" | base64 -d > "${HOME}/.config/rclone/rclone.conf"
+          chmod 600 "${HOME}/.config/rclone/rclone.conf"
+
+          REMOTE_COUNT=$(rclone listremotes | wc -l)
+          if [ "${REMOTE_COUNT}" -eq 0 ]; then
+            echo "::error::No remote found in decoded rclone configuration. Check your RCLONE_CONFIG_B64."
+            exit 1
+          fi
+          echo "rclone configured successfully with $(rclone listremotes | tr '\n' ' ')"
+
+      - name: Restore Workspace from Google Drive
+        run: |
+          if [ "${FORCE_CLEAN_RESTORE}" = "true" ]; then
+            echo "Force clean restore requested. Skipping remote backup download."
+            mkdir -p "${WORKSPACE_DIR}"
+          else
+            ./scripts/restore-workspace.sh
+          fi
+
+      - name: Start 5-Minute Auto-Sync Daemon
+        run: |
+          echo "Starting background sync daemon (interval: 300s)..."
+          nohup ./scripts/sync-workspace.sh --daemon 300 > /tmp/sync-daemon.log 2>&1 &
+          echo "Sync daemon started in background."
+
+      - name: Launch DeepSeek Harness & Expose Web Interface
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        run: |
+          ./scripts/start-harness.sh
+
+      - name: Final Workspace Backup to Google Drive
+        if: always()
+        run: |
+          echo "Executing final workspace synchronization..."
+          if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
+            ./scripts/sync-workspace.sh --final
+          else
+            echo "rclone configuration not found; skipping backup."
+          fi
+
+      - name: Verify Workspace Backup
+        if: always()
+        run: |
+          if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
+            ./scripts/verify-backup.sh
+          else
+            echo "rclone configuration not found; skipping verification."
+          fi
