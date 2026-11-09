@@ -66,25 +66,40 @@ trap cleanup EXIT SIGTERM SIGINT
 
 # Resolve Network Host
 BIND_HOST="127.0.0.1"
+ACCESS_HOST="127.0.0.1"
+
 TAILSCALE_IP="${TAILSCALE_IP:-}"
 if [ -z "${TAILSCALE_IP}" ]; then
     TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
 fi
 
-if [ -n "${TAILSCALE_IP}" ] && [[ "${TAILSCALE_IP}" =~ ^100\. ]]; then
-    BIND_HOST="${TAILSCALE_IP}"
-    echo "Tailscale detected: Binding Harness to ${BIND_HOST}"
-fi
-
 TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-}"
 if [ -z "${TAILSCALE_HOSTNAME}" ]; then
-    TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//' || echo "${BIND_HOST}")
+    TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//' || true)
 fi
+
+TRUSTED_ARGS=()
+if [ -n "${TAILSCALE_IP}" ] && [[ "${TAILSCALE_IP}" =~ ^100\. ]]; then
+    BIND_HOST="${TAILSCALE_IP}"
+    ACCESS_HOST="${TAILSCALE_HOSTNAME:-$TAILSCALE_IP}"
+    echo "Tailscale detected: Binding Harness to ${BIND_HOST} (Access via http://${ACCESS_HOST}:${PORT})"
+    TRUSTED_ARGS+=("--trusted-host" "${ACCESS_HOST}")
+    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_IP}")
+    if [ -n "${TAILSCALE_HOSTNAME}" ]; then
+        TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_HOSTNAME}")
+    fi
+    # Also expose via Tailscale Serve if available
+    tailscale serve --bg --set-path / "http://${BIND_HOST}:${PORT}" 2>/dev/null || true
+fi
+
+TRUSTED_ARGS+=("--trusted-host" "localhost")
+TRUSTED_ARGS+=("--trusted-host" "127.0.0.1")
 
 echo "=================================================="
 echo "🤖 Starting DeepSeek Harness Web UI"
 echo "=================================================="
 echo "Bind Host:       ${BIND_HOST}"
+echo "Access Host:     ${ACCESS_HOST}"
 echo "Port:            ${PORT}"
 echo "Workspace:       ${WORKSPACE_DIR}"
 echo "Preview Tunnels: On-demand only ('preview tunnel <port>')"
@@ -100,21 +115,34 @@ dsh web \
     --no-open \
     --host "${BIND_HOST}" \
     --port "${PORT}" \
-    --public-url "http://${BIND_HOST}:${PORT}" \
-    --trusted-host "${BIND_HOST}" \
-    --trusted-host "${TAILSCALE_HOSTNAME}" \
-    --trusted-host "localhost" \
-    --trusted-host "127.0.0.1" \
+    --public-url "http://${ACCESS_HOST}:${PORT}" \
+    "${TRUSTED_ARGS[@]}" \
     > "${DSH_LOG}" 2>&1 &
 DSH_PID=$!
 
 # Wait for Harness to output the authenticated URL
 echo "Waiting for DeepSeek Harness Web UI to be ready..."
+sleep 3
 FINAL_WEB_URL=""
 for i in $(seq 1 45); do
     if ! kill -0 "${DSH_PID}" 2>/dev/null; then
-        echo "❌ Error: DeepSeek Harness process exited unexpectedly. Logs:" >&2
+        echo "❌ DeepSeek Harness process exited. Logs:" >&2
         cat "${DSH_LOG}" >&2
+        if [ "${BIND_HOST}" != "127.0.0.1" ]; then
+            echo "Attempting fallback bind to 127.0.0.1..."
+            BIND_HOST="127.0.0.1"
+            tailscale serve --bg --set-path / "http://127.0.0.1:${PORT}" 2>/dev/null || true
+            dsh web \
+                --no-open \
+                --host "127.0.0.1" \
+                --port "${PORT}" \
+                --public-url "http://${ACCESS_HOST}:${PORT}" \
+                "${TRUSTED_ARGS[@]}" \
+                > "${DSH_LOG}" 2>&1 &
+            DSH_PID=$!
+            sleep 3
+            continue
+        fi
         exit 1
     fi
 
@@ -129,7 +157,7 @@ for i in $(seq 1 45); do
 done
 
 if [ -z "${FINAL_WEB_URL}" ]; then
-    FINAL_WEB_URL="http://${BIND_HOST}:${PORT}"
+    FINAL_WEB_URL="http://${ACCESS_HOST}:${PORT}"
 fi
 
 echo ""
