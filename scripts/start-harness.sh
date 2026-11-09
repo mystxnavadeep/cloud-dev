@@ -18,6 +18,11 @@ SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-350}"
 export DSH_HOME="${WORKSPACE_DIR}/.dsh"
 export DSH_AGENTS_HOME="${WORKSPACE_DIR}/.agents"
 
+# Sanitize placeholder DEEPSEEK_API_KEY
+if [ "${DEEPSEEK_API_KEY:-}" = "add" ]; then
+    unset DEEPSEEK_API_KEY
+fi
+
 mkdir -p "${DSH_HOME}" "${DSH_AGENTS_HOME}" "${WORKSPACE_DIR}"
 cd "${WORKSPACE_DIR}"
 

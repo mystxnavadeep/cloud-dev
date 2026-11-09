@@ -18,7 +18,7 @@ echo "=================================================="
 # ------------------------------------------------------------------------------
 # 1. GitHub CLI (gh)
 # ------------------------------------------------------------------------------
-if [ -n "${GH_TOKEN:-}" ]; then
+if [ -n "${GH_TOKEN:-}" ] && [ "${GH_TOKEN}" != "add" ]; then
     echo "Configuring GitHub CLI (gh)..."
     echo "${GH_TOKEN}" | gh auth login --with-token >/dev/null 2>&1 || true
     gh auth setup-git >/dev/null 2>&1 || true
@@ -32,17 +32,17 @@ if [ -n "${GH_TOKEN:-}" ]; then
         echo "⚠️ Warning: GitHub CLI auth login completed, but status check failed."
     fi
 else
-    echo "ℹ️ GH_TOKEN not provided; skipping custom GitHub CLI authentication."
+    echo "ℹ️ GH_TOKEN not provided or placeholder; skipping custom GitHub CLI authentication."
 fi
 
 # ------------------------------------------------------------------------------
 # 2. Cloudflare Wrangler CLI (wrangler)
 # ------------------------------------------------------------------------------
-if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ "${CLOUDFLARE_API_TOKEN}" != "add" ]; then
     echo "Configuring Cloudflare Wrangler..."
     echo "export CLOUDFLARE_API_TOKEN=\"${CLOUDFLARE_API_TOKEN}\"" >> "${ENV_FILE}"
 
-    if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+    if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ "${CLOUDFLARE_ACCOUNT_ID}" != "add" ]; then
         echo "export CLOUDFLARE_ACCOUNT_ID=\"${CLOUDFLARE_ACCOUNT_ID}\"" >> "${ENV_FILE}"
     fi
 
@@ -53,13 +53,13 @@ if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
         echo "⚠️ Warning: Cloudflare credentials configured, but wrangler whoami verification returned non-zero."
     fi
 else
-    echo "ℹ️ CLOUDFLARE_API_TOKEN not provided; skipping Wrangler authentication."
+    echo "ℹ️ CLOUDFLARE_API_TOKEN not provided or placeholder; skipping Wrangler authentication."
 fi
 
 # ------------------------------------------------------------------------------
 # 3. Vercel CLI (vercel)
 # ------------------------------------------------------------------------------
-if [ -n "${VERCEL_TOKEN:-}" ]; then
+if [ -n "${VERCEL_TOKEN:-}" ] && [ "${VERCEL_TOKEN}" != "add" ]; then
     echo "Configuring Vercel CLI..."
     mkdir -p "${HOME}/.vercel"
     chmod 700 "${HOME}/.vercel"
@@ -71,10 +71,10 @@ EOF
     chmod 600 "${HOME}/.vercel/auth.json"
 
     echo "export VERCEL_TOKEN=\"${VERCEL_TOKEN}\"" >> "${ENV_FILE}"
-    if [ -n "${VERCEL_ORG_ID:-}" ]; then
+    if [ -n "${VERCEL_ORG_ID:-}" ] && [ "${VERCEL_ORG_ID}" != "add" ]; then
         echo "export VERCEL_ORG_ID=\"${VERCEL_ORG_ID}\"" >> "${ENV_FILE}"
     fi
-    if [ -n "${VERCEL_PROJECT_ID:-}" ]; then
+    if [ -n "${VERCEL_PROJECT_ID:-}" ] && [ "${VERCEL_PROJECT_ID}" != "add" ]; then
         echo "export VERCEL_PROJECT_ID=\"${VERCEL_PROJECT_ID}\"" >> "${ENV_FILE}"
     fi
 
@@ -85,7 +85,7 @@ EOF
         echo "⚠️ Warning: Vercel CLI configured, but vercel whoami check returned non-zero."
     fi
 else
-    echo "ℹ️ VERCEL_TOKEN not provided; skipping Vercel CLI authentication."
+    echo "ℹ️ VERCEL_TOKEN not provided or placeholder; skipping Vercel CLI authentication."
 fi
 
 # Ensure .cloud_dev_env is sourced in all future bash sessions
