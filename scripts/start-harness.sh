@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# start-harness.sh: Launch Cloudflare Tunnel and DeepSeek Harness Web UI
+# start-harness.sh: Launch DeepSeek Harness Web UI with Tailscale-Only Access
+# NO public tunnels (Cloudflare/ngrok removed).
+# Services bind strictly to the private Tailscale network.
 # ==============================================================================
 
 set -eo pipefail
@@ -16,84 +18,70 @@ export DSH_AGENTS_HOME="${WORKSPACE_DIR}/.agents"
 mkdir -p "${DSH_HOME}" "${DSH_AGENTS_HOME}"
 cd "${WORKSPACE_DIR}"
 
-CLOUDFLARED_LOG="/tmp/cloudflared.log"
 DSH_LOG="/tmp/dsh.log"
-rm -f "${CLOUDFLARED_LOG}" "${DSH_LOG}"
+rm -f "${DSH_LOG}"
 
 # Cleanup handler on exit or signal
 cleanup() {
     echo ""
     echo "=================================================="
-    echo "🛑 Shutting Down DeepSeek Harness Session"
+    echo "🛑 Shutting Down Cloud Development Session"
     echo "=================================================="
+    if [ -n "${PREVIEW_MONITOR_PID:-}" ] && kill -0 "${PREVIEW_MONITOR_PID}" 2>/dev/null; then
+        echo "Stopping preview monitor (PID: ${PREVIEW_MONITOR_PID})..."
+        kill -SIGTERM "${PREVIEW_MONITOR_PID}" 2>/dev/null || true
+    fi
     if [ -n "${DSH_PID:-}" ] && kill -0 "${DSH_PID}" 2>/dev/null; then
         echo "Terminating DeepSeek Harness (PID: ${DSH_PID})..."
         kill -SIGTERM "${DSH_PID}" 2>/dev/null || true
     fi
-    if [ -n "${TUNNEL_PID:-}" ] && kill -0 "${TUNNEL_PID}" 2>/dev/null; then
-        echo "Terminating Cloudflare Tunnel (PID: ${TUNNEL_PID})..."
-        kill -SIGTERM "${TUNNEL_PID}" 2>/dev/null || true
-    fi
 }
 trap cleanup EXIT SIGTERM SIGINT
 
-echo "=================================================="
-echo "🌐 Starting Cloudflare Tunnel"
-echo "=================================================="
-
-# Check if a custom Cloudflare Tunnel token is provided
-if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
-    echo "Using provided Cloudflare Tunnel Token..."
-    cloudflared tunnel --no-autoupdate run --token "${CLOUDFLARE_TUNNEL_TOKEN}" > "${CLOUDFLARED_LOG}" 2>&1 &
-    TUNNEL_PID=$!
-    # If custom token is used, user already configured hostname or public URL
-    TUNNEL_URL="${CUSTOM_TUNNEL_URL:-https://localhost:${PORT}}"
-    TUNNEL_HOST=$(echo "${TUNNEL_URL}" | sed -E 's~https?://([^/:]+).*~\1~')
-else
-    echo "Using Cloudflare Quick Tunnel (zero-configuration)..."
-    cloudflared tunnel --url "http://127.0.0.1:${PORT}" --http-host-header "localhost:${PORT}" --no-autoupdate > "${CLOUDFLARED_LOG}" 2>&1 &
-    TUNNEL_PID=$!
-
-    # Wait for tunnel URL to appear in logs
-    echo "Waiting for Cloudflare Tunnel URL..."
-    TUNNEL_URL=""
-    for i in $(seq 1 45); do
-        if grep -q "trycloudflare.com" "${CLOUDFLARED_LOG}" 2>/dev/null; then
-            TUNNEL_URL=$(grep -o -E "https://[-a-zA-Z0-9.]+\.trycloudflare\.com" "${CLOUDFLARED_LOG}" | head -n 1)
-            if [ -n "${TUNNEL_URL}" ]; then
-                break
-            fi
-        fi
-        sleep 1
-    done
-
-    if [ -z "${TUNNEL_URL}" ]; then
-        echo "❌ Error: Could not establish Cloudflare Tunnel. Tunnel logs:" >&2
-        cat "${CLOUDFLARED_LOG}" >&2
-        exit 1
-    fi
-    TUNNEL_HOST=$(echo "${TUNNEL_URL}" | sed -E 's~https?://([^/:]+).*~\1~')
+# 1. Resolve and verify Tailscale network identity
+TAILSCALE_IP="${TAILSCALE_IP:-}"
+if [ -z "${TAILSCALE_IP}" ]; then
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
 fi
 
-echo "✅ Tunnel established: ${TUNNEL_URL}"
+if [ -z "${TAILSCALE_IP}" ] || [[ ! "${TAILSCALE_IP}" =~ ^100\. ]]; then
+    echo "❌ Error: Valid Tailscale IP not found (${TAILSCALE_IP}). Tailscale is required for private access!" >&2
+    exit 1
+fi
+
+TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-}"
+if [ -z "${TAILSCALE_HOSTNAME}" ]; then
+    TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//' || echo "${TAILSCALE_IP}")
+fi
 
 echo "=================================================="
-echo "🤖 Starting DeepSeek Harness Web UI"
+echo "🛡️ Starting Private DeepSeek Harness on Tailscale"
 echo "=================================================="
+echo "Bind Address:       ${TAILSCALE_IP} (tailscale0)"
+echo "Port:               ${PORT}"
+echo "MagicDNS Hostname:  ${TAILSCALE_HOSTNAME}"
+echo "Public Tunnels:     DISABLED"
 
-# Launch dsh web
-# Pass --no-open to avoid xdg-open failure in headless environment
+# 2. Start the Private Website Preview Monitor in background
+echo "Starting Website Preview Monitor..."
+"$(dirname "$0")/preview-monitor.sh" > /tmp/preview-monitor.log 2>&1 &
+PREVIEW_MONITOR_PID=$!
+
+# 3. Launch DeepSeek Harness Web UI bound to Tailscale IP
+# Pass --no-open to avoid xdg-open in headless environment
+# Pass --host to bind strictly to the Tailscale interface
 # Pass --public-url and --trusted-host so dsh creates the authenticated access URL
 dsh web \
     --no-open \
-    --host 127.0.0.1 \
+    --host "${TAILSCALE_IP}" \
     --port "${PORT}" \
-    --public-url "${TUNNEL_URL}" \
-    --trusted-host "${TUNNEL_HOST}" \
+    --public-url "http://${TAILSCALE_IP}:${PORT}" \
+    --trusted-host "${TAILSCALE_IP}" \
+    --trusted-host "${TAILSCALE_HOSTNAME}" \
     > "${DSH_LOG}" 2>&1 &
 DSH_PID=$!
 
-# Wait for Harness to output the authenticated URL
+# 4. Wait for Harness to output the authenticated URL
 echo "Waiting for DeepSeek Harness Web UI to be ready..."
 FINAL_WEB_URL=""
 for i in $(seq 1 45); do
@@ -116,19 +104,30 @@ done
 
 # Fallback if specific log format differed
 if [ -z "${FINAL_WEB_URL}" ]; then
-    FINAL_WEB_URL="${TUNNEL_URL}"
+    FINAL_WEB_URL="http://${TAILSCALE_IP}:${PORT}"
 fi
+
+# Also formulate MagicDNS URL with authentication query params
+AUTH_QUERY=$(echo "${FINAL_WEB_URL}" | grep -o -E '\?.*$' || true)
+MAGICDNS_URL="http://${TAILSCALE_HOSTNAME}:${PORT}${AUTH_QUERY}"
 
 echo ""
 echo "================================================================================"
-echo "🎉 DEEPSEEK HARNESS WEB UI IS ONLINE!"
+echo "🔒 DEEPSEEK HARNESS WEB UI IS ONLINE (TAILSCALE PRIVATE ACCESS ONLY)"
 echo "================================================================================"
 echo ""
-echo "🔗 Access URL: ${FINAL_WEB_URL}"
+echo "🔗 Direct Tailscale IP URL:    ${FINAL_WEB_URL}"
+echo "🔗 MagicDNS Hostname URL:     ${MAGICDNS_URL}"
 echo ""
-echo "📁 Workspace Directory: ${WORKSPACE_DIR}"
-echo "⏱️ Session Duration:    ${SESSION_DURATION_MINUTES} minutes (Max 6 hours)"
-echo "🔄 Persistence:         Auto-syncing to Google Drive every 5 minutes"
+echo "🌐 Website Previews:           http://${TAILSCALE_IP}:<PREVIEW_PORT>"
+echo "   Example (React/Vite):       npm run dev -- --host 0.0.0.0 (Port 5173)"
+echo "   Example (Next.js):          npx next dev -H 0.0.0.0 -p 3000"
+echo "   Example (FastAPI):          uvicorn main:app --host 0.0.0.0 --port 8000"
+echo ""
+echo "📁 Workspace Directory:        ${WORKSPACE_DIR}"
+echo "⏱️ Session Duration:           ${SESSION_DURATION_MINUTES} minutes (Max 6 hours)"
+echo "🔄 Persistence:                Auto-syncing to Google Drive every 5 minutes"
+echo "🔒 Remote Access Policy:       Tailscale ONLY (Zero public tunnels/ports)"
 echo ""
 echo "================================================================================"
 echo ""
@@ -136,23 +135,33 @@ echo ""
 # Write to GitHub Step Summary
 if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
     {
-        echo "## 🚀 DeepSeek Harness Cloud Environment"
+        echo "## 🚀 DeepSeek Harness Cloud Environment (Tailscale Private)"
         echo ""
-        echo "### 🌐 Web Interface"
-        echo "[**👉 Click Here to Open DeepSeek Harness**](${FINAL_WEB_URL})"
+        echo "### 🤖 DeepSeek Harness Web UI"
+        echo "- **Direct Tailscale IP URL:** [${FINAL_WEB_URL}](${FINAL_WEB_URL})"
+        echo "- **MagicDNS URL:** [${MAGICDNS_URL}](${MAGICDNS_URL})"
         echo ""
-        echo "\`\`\`"
+        echo "```text"
         echo "${FINAL_WEB_URL}"
-        echo "\`\`\`"
+        echo "```"
+        echo ""
+        echo "### 🌐 Private Website Preview Instructions"
+        echo "To preview websites on your authenticated Tailscale device:"
+        echo "1. Run your dev server bound to \`0.0.0.0\`:"
+        echo "   - **Vite:** \`npm run dev -- --host 0.0.0.0\`"
+        echo "   - **Next.js:** \`npx next dev -H 0.0.0.0 -p 3000\`"
+        echo "   - **FastAPI:** \`uvicorn main:app --host 0.0.0.0 --port 8000\`"
+        echo "   - **Static HTML:** \`preview serve <dir> [port]\`"
+        echo "2. Open in browser: \`http://${TAILSCALE_IP}:<PORT>\`"
         echo ""
         echo "### 📋 Session Details"
         echo "- **Status:** 🟢 Active"
-        echo "- **Tunnel Host:** \`${TUNNEL_HOST}\`"
+        echo "- **Tailscale IP:** \`${TAILSCALE_IP}\`"
+        echo "- **MagicDNS:** \`${TAILSCALE_HOSTNAME}\`"
         echo "- **Workspace:** \`${WORKSPACE_DIR}\`"
-        echo "- **Max Duration:** ${SESSION_DURATION_MINUTES} minutes"
         echo "- **Auto-sync Interval:** Every 5 minutes to Google Drive"
         echo ""
-        echo "> **Tip:** Keep this workflow running while developing. All code and settings are saved automatically!"
+        echo "> **Note:** Access is restricted exclusively to devices on your Tailnet. No public ports or reverse tunnels are created."
     } >> "${GITHUB_STEP_SUMMARY}"
 fi
 

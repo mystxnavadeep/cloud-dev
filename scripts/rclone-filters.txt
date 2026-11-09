@@ -1,13 +1,20 @@
 # rclone filter rules for DeepSeek Harness workspace backup
 
-# Exclude package manager & build caches
-- **/node_modules/.cache/**
+# Exclude node_modules and package caches
+- **/node_modules/**
 - **/.npm/**
 - **/.yarn/cache/**
 - **/.pnpm-store/**
+- **/.bun/**
+
+# Exclude build and framework caches
 - **/.next/cache/**
 - **/.turbo/**
 - **/.cache/**
+- **/.parcel-cache/**
+- **/dist/**
+- **/build/**
+- **/.output/**
 
 # Exclude Python bytecode and virtualenv caches
 - **/__pycache__/**
@@ -16,8 +23,10 @@
 - **/.pytest_cache/**
 - **/.mypy_cache/**
 - **/.ruff_cache/**
+- **/.venv/**
+- **/venv/**
 
-# Exclude temporary and OS files
+# Exclude temporary, lock, and OS files
 - **/*.tmp
 - **/*.temp
 - **/*.swp
@@ -42,6 +51,8 @@
 - **/*.key
 - **/.env.local
 - **/.env.*.local
+- **/.vercel/auth.json
+- **/.wrangler/config/default.toml
 
-# Include everything else (all source files, configs, documentation, git repositories)
+# Include everything else (source files, configs, documentation, git metadata)
 + **
