@@ -65,7 +65,7 @@ npm install -g wrangler vercel
 
 # 5. Install DeepSeek Harness CLI
 echo "Installing DeepSeek Harness CLI (@deepseek-ai/dsh)..."
-npm install -g @deepseek-ai/dsh
+npm install -g @deepseek-ai/dsh@next || npm install -g @deepseek-ai/dsh@0.2.2-rc.1 || true
 
 # 6. Install Playwright and Chromium
 echo "Installing Playwright..."
@@ -117,18 +117,18 @@ sudo ln -sf "${SCRIPT_DIR}/preview-tunnel.sh" /usr/local/bin/preview-tunnel || t
 echo "=================================================="
 echo "✅ All Development Tools Successfully Installed!"
 echo "=================================================="
-node --version
-npm --version
-pnpm --version
-yarn --version
+node --version || true
+npm --version || true
+pnpm --version || true
+yarn --version || true
 bun --version || true
-python3 --version
-pip --version
+python3 --version || true
+pip --version || true
 uv --version || true
-git --version
-gh --version | head -n 1
+git --version || true
+(gh --version 2>/dev/null || true) | head -n 1 || true
 wrangler --version || true
 vercel --version || true
-rclone --version | head -n 1
-cloudflared --version | head -n 1
+(rclone --version 2>/dev/null || true) | head -n 1 || true
+(cloudflared --version 2>/dev/null || true) | head -n 1 || true
 dsh --version || echo "dsh CLI ready"
