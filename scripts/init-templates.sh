@@ -5,7 +5,8 @@
 
 set -eo pipefail
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/home/runner/workspace}"
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
+WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 EXAMPLES_DIR="${WORKSPACE_DIR}/examples"
 
 mkdir -p "${EXAMPLES_DIR}"

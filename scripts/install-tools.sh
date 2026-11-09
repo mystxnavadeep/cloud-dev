@@ -24,7 +24,6 @@ sudo apt-get install -y -qq \
     pipx \
     ca-certificates
 
-# Ensure pipx path
 pipx ensurepath || true
 
 echo "=================================================="
@@ -38,7 +37,6 @@ npm install -g pnpm yarn
 if ! command -v bun &>/dev/null; then
     echo "Installing Bun..."
     curl -fsSL https://bun.sh/install | bash
-    # Export for current session and downstream bashrc
     export BUN_INSTALL="${HOME}/.bun"
     export PATH="${BUN_INSTALL}/bin:${PATH}"
 fi
@@ -98,14 +96,23 @@ pip install --no-cache-dir \
     notebook
 
 echo "=================================================="
-echo "☁️ Installing rclone"
+echo "☁️ Installing rclone and cloudflared"
 echo "=================================================="
 if ! command -v rclone &>/dev/null; then
     curl -fsSL https://rclone.org/install.sh | sudo bash
 fi
 
+if ! command -v cloudflared &>/dev/null; then
+    echo "Installing Cloudflare CLI (cloudflared)..."
+    curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+    sudo dpkg -i /tmp/cloudflared.deb >/dev/null 2>&1 || true
+    rm -f /tmp/cloudflared.deb
+fi
+
 # Make helper script commands available in PATH
-sudo ln -sf "${PWD}/scripts/preview-cli.sh" /usr/local/bin/preview || true
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+sudo ln -sf "${SCRIPT_DIR}/preview-cli.sh" /usr/local/bin/preview || true
+sudo ln -sf "${SCRIPT_DIR}/preview-tunnel.sh" /usr/local/bin/preview-tunnel || true
 
 echo "=================================================="
 echo "✅ All Development Tools Successfully Installed!"
@@ -123,4 +130,5 @@ gh --version | head -n 1
 wrangler --version || true
 vercel --version || true
 rclone --version | head -n 1
+cloudflared --version | head -n 1
 dsh --version || echo "dsh CLI ready"

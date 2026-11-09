@@ -1,11 +1,12 @@
-# ☁️ Cloud Dev: Persistent DeepSeek Harness Environment (Tailscale-Only)
+# ☁️ Cloud Dev: Persistent Cloud Development Environment
 
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-Cloud_Runner-2088FF?logo=github-actions&logoColor=white)](https://github.com/features/actions)
+[![Storage](https://img.shields.io/badge/Storage-Google_Drive_(gdrive)-34A853?logo=googledrive&logoColor=white)](https://rclone.org/drive/)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek_Harness-v0.2-brightgreen)](https://github.com/deepseek-ai/dsh)
-[![Network](https://img.shields.io/badge/Access-Tailscale_Private_WireGuard-111827?logo=tailscale&logoColor=white)](https://tailscale.com/)
-[![Persistence](https://img.shields.io/badge/Storage-Google_Drive_via_rclone-34A853?logo=googledrive&logoColor=white)](https://rclone.org/drive/)
+[![Cloudflare](https://img.shields.io/badge/Preview-On--Demand_Tunnels-F38020?logo=cloudflare&logoColor=white)](https://www.cloudflare.com/)
+[![Tailscale](https://img.shields.io/badge/Private_Access-Tailscale-111827?logo=tailscale&logoColor=white)](https://tailscale.com/)
 
-A complete, persistent cloud development environment running **DeepSeek Harness (`dsh`)** inside GitHub Actions runners. Remote access is strictly restricted to your private **Tailscale** network (zero public tunnels, zero open internet ports). Projects and configurations are automatically synchronized to **Google Drive** every 5 minutes and restored seamlessly between sessions.
+A full-featured, persistent cloud development environment running inside GitHub Actions. Powered by **DeepSeek Harness (`dsh`)**, preloaded with modern web and Python toolchains, featuring persistent storage backed by **Google Drive (`gdrive:cloud-dev/workspace`)** with automatic 5-minute sync, and supporting on-demand private website previews.
 
 ---
 
@@ -16,250 +17,159 @@ A complete, persistent cloud development environment running **DeepSeek Harness 
  │                    GitHub Actions Runner (Ubuntu)                      │
  │                                                                        │
  │   ┌──────────────────────┐              ┌──────────────────────────┐   │
- │   │     Google Drive     │ ──(Restore)─>│   /home/runner/          │   │
- │   │   (rclone remote)    │ <──(5m Sync)─│    workspace             │   │
- │   └──────────────────────┘ <──(Final)── └────────────┬─────────────┘   │
+ │   │     Google Drive     │ ──(Restore)─>│   workspace/             │   │
+ │   │  gdrive:cloud-dev/   │ <──(5m Sync)─│   (Source code, configs, │   │
+ │   │      workspace       │ <──(Final)── │    project files, .dsh)  │   │
+ │   └──────────────────────┘              └────────────┬─────────────┘   │
  │                                                      │                 │
- │                                               (DSH_HOME & CWD)         │
  │                                                      ▼                 │
- │   ┌──────────────────────┐              ┌──────────────────────────┐   │
- │   │  Tailscale Interface │ <──────────> │   DeepSeek Harness       │   │
- │   │   (tailscale0 / WireGuard)          │   Web UI (:3080)         │   │
- │   │                      │              ├──────────────────────────┤   │
- │   │  100.x.y.z           │ <──────────> │   Website Previews       │   │
- │   │  cloud-dev.tailnet   │              │   (:5173, :3000, :8000)  │   │
- │   └──────────┬───────────┘              └──────────────────────────┘   │
- └──────────────┼─────────────────────────────────────────────────────────┘
-                │ Encrypted WireGuard Peer-to-Peer
-                ▼
-      ┌──────────────────┐
-      │   Your Browser   │ (Authenticated on your Tailscale tailnet)
-      └──────────────────┘
+ │                                         ┌──────────────────────────┐   │
+ │                                         │     DeepSeek Harness     │   │
+ │                                         │    Web UI (Port 3080)    │   │
+ │                                         └────────────┬─────────────┘   │
+ │                                                      │                 │
+ │   ┌──────────────────────────────────────────────────┴─────────────┐   │
+ │   │                     Preview Services                           │   │
+ │   │                                                                │   │
+ │   │  • On-Demand Cloudflare Tunnel:  preview tunnel <port>         │   │
+ │   │  • Private Tailscale Network:    http://100.x.y.z:<port>       │   │
+ │   │  • Development Servers:          Vite, Next.js, FastAPI, Flask │   │
+ │   └────────────────────────────────────────────────────────────────┘   │
+ └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🧰 Preinstalled Tool Inventory
+## 💾 Google Drive Workspace Persistence
 
-### JavaScript & Web Development
+All your project files, source code, build artifacts, and agent state live in the persistent `workspace/` directory.
+
+### Where Files Are Stored
+- **Remote Google Drive Path:** `gdrive:cloud-dev/workspace`
+- **Local Runner Path:** `workspace/` (relative to repository root; also symlinked to `/home/runner/workspace`)
+- **Safety Trash Directory:** `gdrive:cloud-dev/trash/<timestamp>` (replaces or deletions are archived in trash to prevent accidental data loss)
+
+### 1. Automatic Workspace Restore (Startup)
+When a workflow session starts:
+- rclone decodes the `RCLONE_CONFIG_B64` secret securely into `$HOME/.config/rclone/rclone.conf` with `600` permissions.
+- Verifies connectivity to the `gdrive:` remote.
+- Downloads previous files from `gdrive:cloud-dev/workspace` into local `workspace/`.
+- **First-Run Safe:** If the remote directory is empty or new, it initializes cleanly with starter documentation and templates without failing.
+- **Overwrite Protection:** Verifies restored files before proceeding; never overwrites restored files with an empty workspace.
+
+### 2. Automatic Sync Every 5 Minutes (Runtime)
+While your session is active:
+- A background synchronization daemon runs every **300 seconds (5 minutes)**.
+- Uses file-descriptor locking (`flock`) to **prevent overlapping sync processes**.
+- Synchronizes changes to `gdrive:cloud-dev/workspace`.
+- Captures errors gracefully in logs without stopping development or leaking secrets.
+
+### 3. Final Backup (Shutdown)
+When the session finishes, times out (up to 6 hours), or is cancelled:
+- Triggered automatically via GitHub Actions `if: always()`.
+- Stops the background sync daemon cleanly.
+- Executes a final synchronization upload to Google Drive.
+- Confirms file counts and reports backup status in the GitHub Actions Job Summary.
+
+---
+
+## 🌐 Preview Behavior (On-Demand Tunnels)
+
+To protect your privacy and bandwidth:
+- **No Automatic Public Tunnels:** The environment does **NOT** automatically create public Cloudflare Quick Tunnels on startup.
+- **On-Demand Tunnels:** A temporary Cloudflare Quick Tunnel is generated **only when explicitly requested** from DeepSeek Harness or via the CLI:
+  ```bash
+  preview tunnel <port>
+  # Example for a React/Vite dev server:
+  preview tunnel 5173
+  ```
+- **Persistent Previews:** Once started, the preview server and tunnel remain active in the background for the entire session.
+- **Tailscale Private Previews:** If you configure Tailscale, dev servers bound to `0.0.0.0` are also directly reachable over your private Tailnet (`http://<TAILSCALE_IP>:<PORT>`).
+
+### Developer Preview CLI
+Use the pre-installed `preview` command inside your workspace terminal:
+```bash
+preview list               # List all running dev servers and active tunnels
+preview tunnel <port>      # Spawn a temporary Cloudflare Quick Tunnel for <port>
+preview serve <dir> [port] # Instantly serve a static folder locally (e.g. preview serve ./dist 8080)
+preview info               # Display workspace and network identity
+```
+
+---
+
+## 🧰 Preinstalled Development Toolchain
+
+### Web & JavaScript
 - **Runtimes & Package Managers:** Node.js LTS (v20), npm, pnpm, yarn, Bun.
-- **Frameworks & Build Tools:** React, Vite, Next.js, TypeScript (`ts-node`), Tailwind CSS, shadcn/ui, Bootstrap, Sass, PostCSS, Webpack, Parcel.
+- **Frameworks & Scaffolding:** React, Vite, Next.js (`create-next-app`), TypeScript (`ts-node`), Tailwind CSS, shadcn/ui, Bootstrap, Sass, PostCSS, Webpack, Parcel.
 - **Animation, Graphics & Icons:** Framer Motion, Three.js, Lucide icons.
-- **Code Quality:** ESLint, Prettier.
+- **Linters & Formatters:** ESLint, Prettier.
 
 ### Python Environment
-- **Python 3 & Pip:** Python 3.11 with pip.
-- **Tooling:** Astral `uv` (ultra-fast package installer), `pipx`, `virtualenv`.
+- **Python:** Python 3.11 with pip.
+- **Tools:** Astral `uv` (fast package installer), `pipx`, `virtualenv`.
 - **Frameworks & Notebooks:** Flask, FastAPI, Uvicorn, Django, Jupyter Notebook, JupyterLab.
 
-### System & Testing Tools
-- **Utilities:** Git, GitHub CLI (`gh`), curl, wget, jq, zip/unzip, build-essential (`gcc`, `g++`, `make`), tree.
-- **Browser Automation:** Chromium, Playwright (with preinstalled chromium browser binaries).
-
-### Cloud Platform CLIs
-- **GitHub CLI:** `gh`
-- **Cloudflare:** `wrangler`
-- **Vercel:** `vercel`
+### System, Testing & Cloud Tools
+- **System:** Git, GitHub CLI (`gh`), curl, wget, jq, zip/unzip, build-essential (`gcc`, `g++`, `make`), tree.
+- **Browsers & Testing:** Chromium, Playwright (with installed Chromium binary).
+- **Cloud Platform CLIs:** Cloudflare Wrangler (`wrangler`), Vercel CLI (`vercel`).
+- **AI Agent Framework:** DeepSeek Harness (`@deepseek-ai/dsh`).
 
 ---
 
 ## 🔐 GitHub Secrets Configuration
 
-Add these secrets in your repository: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+Add these in **Settings** → **Secrets and variables** → **Actions**:
 
-| Secret Name | Required | Description |
+| Secret Name | Status | Purpose |
 | :--- | :--- | :--- |
-| `TAILSCALE_AUTHKEY` | **Required** | Tailscale pre-authenticated ephemeral key (e.g. `tskey-auth-...`). |
-| `RCLONE_CONFIG_B64` | **Required** | Base64-encoded `rclone.conf` with your Google Drive OAuth token. |
-| `DEEPSEEK_API_KEY` | *Recommended* | DeepSeek API key for agent chat completions and code reasoning. |
-| `GH_TOKEN` | *Optional* | GitHub Personal Access Token for GitHub CLI (`gh`) operations. |
-| `CLOUDFLARE_API_TOKEN` | *Optional* | Cloudflare API token for Cloudflare Wrangler CLI. |
-| `CLOUDFLARE_ACCOUNT_ID` | *Optional* | Cloudflare Account ID for Wrangler projects. |
-| `VERCEL_TOKEN` | *Optional* | Vercel Personal Access Token for Vercel CLI deployments. |
-| `VERCEL_ORG_ID` | *Optional* | Vercel Organization ID (team or user scope). |
-| `VERCEL_PROJECT_ID` | *Optional* | Vercel Project ID for linked project deployments. |
+| `RCLONE_CONFIG_B64` | **Required** | Base64-encoded `rclone.conf` with Google Drive `gdrive:` remote credentials. |
+| `DEEPSEEK_API_KEY` | *Recommended* | DeepSeek API key for Harness agent reasoning and tool calls. |
+| `TAILSCALE_AUTHKEY` | *Optional* | Ephemeral auth key for private Tailnet connectivity. |
+| `GH_TOKEN` | *Optional* | GitHub token for pre-authenticating GitHub CLI (`gh`). |
+| `CLOUDFLARE_API_TOKEN` | *Optional* | Cloudflare API token for Wrangler. |
+| `CLOUDFLARE_ACCOUNT_ID` | *Optional* | Cloudflare Account ID for Wrangler. |
+| `VERCEL_TOKEN` | *Optional* | Vercel token for Vercel CLI deployments. |
+| `VERCEL_ORG_ID` | *Optional* | Vercel Organization ID. |
+| `VERCEL_PROJECT_ID` | *Optional* | Vercel Project ID. |
 
 ---
 
-## 🛡️ Tailscale Setup & Private Network Access
+## 🛠️ Step-by-Step Setup Guide
 
-Tailscale is the **exclusive** remote access method. No public reverse tunnels (Cloudflare Tunnels, ngrok) are used, guaranteeing your cloud runner cannot be accessed by anyone outside your Tailnet.
-
-### Step 1: Generate a Tailscale Auth Key
-1. Go to the [Tailscale Admin Console: Settings → Keys](https://login.tailscale.com/admin/settings/keys).
-2. Click **Generate auth key**.
-3. Enable:
-   - **Reusable:** Optional (Enable if you plan to launch multiple runs).
-   - **Ephemeral:** **YES** (Ensures the runner is automatically pruned from your Tailnet when the workflow finishes).
-   - **Tags:** Optional (e.g., `tag:ci` if using ACL tags).
-4. Copy the generated key (starts with `tskey-auth-...`).
-5. Add it to your repository secrets as **`TAILSCALE_AUTHKEY`**.
-
-### Step 2: Tailscale ACLs (Access Control Lists)
-If your tailnet uses customized ACLs, ensure your devices are allowed to reach the runner:
-```json
-{
-  "acls": [
-    {
-      "action": "accept",
-      "src": ["autogroup:member"],
-      "dst": ["tag:ci:*", "cloud-dev:*"]
-    }
-  ]
-}
-```
-*(Default personal Tailscale accounts with default ACLs allow full peer-to-peer communication automatically without additional rules).*
-
----
-
-## 💾 Google Drive Workspace Persistence Setup
-
-### Step 1: Install `rclone` locally
-- **Linux / macOS:** `curl https://rclone.org/install.sh | sudo bash`
-- **Termux:** `pkg install rclone`
-- **Windows:** Download from [rclone.org/downloads](https://rclone.org/downloads) or `winget install Rclone.Rclone`
-
-### Step 2: Configure Google Drive Remote
+### 1. Configure Google Drive in `rclone`
+Run rclone setup on your local computer or Termux:
 ```bash
 rclone config
 ```
-1. Type `n` for **New remote**.
+1. Type `n` for new remote.
 2. Name: `gdrive`
 3. Storage type: `drive`
-4. Client ID & Secret: Leave blank (or enter custom Google Cloud OAuth credentials).
-5. Scope: Type `1` (Full access: `drive`).
-6. Root Folder ID / Service Account: Leave blank.
-7. Advanced configuration: Type `n`.
-8. Web Browser Authentication:
-   - On desktop: Type `y` and log in via your browser.
-   - On headless/Termux: Type `n`, run `rclone authorize "drive"` on a desktop machine, and paste the authorization JSON.
-9. Configure as Team Drive: `n`.
-10. Confirm and save: `y`, then `q`.
+4. Client ID & Secret: Leave blank (or use custom Google Cloud OAuth credentials).
+5. Scope: Type `1` (Full access).
+6. Complete browser authorization.
+7. Confirm and save as `gdrive`.
 
-### Step 3: Base64-Encode `rclone.conf`
-- **Linux / Termux:**
-  ```bash
-  base64 -w 0 ~/.config/rclone/rclone.conf
-  ```
-- **macOS:**
-  ```bash
-  base64 -i ~/.config/rclone/rclone.conf
-  ```
+### 2. Base64-Encode `rclone.conf`
+Encode your `rclone.conf` file:
+- **Linux / Termux:** `base64 -w 0 ~/.config/rclone/rclone.conf`
+- **macOS:** `base64 -i ~/.config/rclone/rclone.conf`
 - **Windows (PowerShell):**
   ```powershell
   [Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:APPDATA\rclone\rclone.conf"))
   ```
-Add the output string to repository secrets as **`RCLONE_CONFIG_B64`**.
+Add the output string as secret **`RCLONE_CONFIG_B64`** in your GitHub repository.
 
 ---
 
-## ☁️ Cloud Platform CLI Setup
+## 🚀 Launching Your Cloud Environment
 
-When provided, these secrets automatically authenticate the respective CLIs inside your cloud workspace:
-
-### 1. GitHub CLI (`GH_TOKEN`)
-1. Go to [GitHub Settings → Developer Settings → Personal Access Tokens](https://github.com/settings/tokens).
-2. Generate a token with `repo`, `workflow`, and `read:org` scopes.
-3. Save as secret `GH_TOKEN`.
-
-### 2. Cloudflare Wrangler (`CLOUDFLARE_API_TOKEN` & `CLOUDFLARE_ACCOUNT_ID`)
-1. In Cloudflare Dashboard, go to **My Profile** → **API Tokens** → **Create Token** (using the "Edit Cloudflare Workers" template).
-2. Account ID can be found in your Workers & Pages dashboard overview.
-3. Save as secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-
-### 3. Vercel CLI (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`)
-1. In Vercel, go to **Account Settings** → **Tokens** → **Create**.
-2. (Optional) In any linked project's `.vercel/project.json`, find `orgId` and `projectId`.
-3. Save as secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`.
-
----
-
-## 🚀 Running Your Cloud Environment
-
-1. Navigate to the **Actions** tab in this repository.
+1. Go to the **Actions** tab in this repository.
 2. Select **Cloud Development Environment (DeepSeek Harness)**.
 3. Click **Run workflow**:
-   - **Session duration in minutes:** `350` (up to 360 minutes / 6 hours).
-   - **Initialize clean workspace:** Leave unchecked (unless you want to discard Google Drive backup).
+   - `session_duration_minutes`: Default is `350` minutes (max 360 / 6 hours).
+   - `force_clean_restore`: Leave unchecked (uncheck preserves Google Drive files).
 4. Click **Run workflow**.
-
----
-
-## 🤖 Accessing DeepSeek Harness in Your Browser
-
-1. In the running workflow run, open the **Run DeepSeek Harness Cloud Environment** job.
-2. Once the runner connects to Tailscale, the logs and the **Job Summary** display your private access URLs:
-   ```text
-   ================================================================================
-   🔒 DEEPSEEK HARNESS WEB UI IS ONLINE (TAILSCALE PRIVATE ACCESS ONLY)
-   ================================================================================
-
-   🔗 Direct Tailscale IP URL:    http://100.x.y.z:3080/?token=abc123xyz...
-   🔗 MagicDNS Hostname URL:     http://cloud-dev.tailxxxx.ts.net:3080/?token=abc123xyz...
-   ```
-3. Open either URL in your browser on any device connected to your Tailscale network.
-
----
-
-## 🌐 Private Website Previews
-
-You can launch and preview any website or API without making it public or creating external tunnels.
-
-### How to Run Dev Servers
-Always bind your development server to `0.0.0.0` so it accepts connections routed across the `tailscale0` network interface:
-
-- **React + Vite:**
-  ```bash
-  npm run dev -- --host 0.0.0.0
-  # Preview: http://<TAILSCALE_IP>:5173
-  ```
-- **Next.js:**
-  ```bash
-  npx next dev -H 0.0.0.0 -p 3000
-  # Preview: http://<TAILSCALE_IP>:3000
-  ```
-- **FastAPI:**
-  ```bash
-  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-  # Preview: http://<TAILSCALE_IP>:8000
-  ```
-- **Flask:**
-  ```bash
-  flask run --host=0.0.0.0 --port=5000
-  # Preview: http://<TAILSCALE_IP>:5000
-  ```
-- **Static HTML / Directory:**
-  ```bash
-  preview serve ./dist 8080
-  # Preview: http://<TAILSCALE_IP>:8080
-  ```
-
-### Automatic Port Detection
-The built-in `preview-monitor` daemon automatically detects when a development server starts listening on any port and outputs the direct Tailscale preview link in the workflow logs and Job Summary!
-
-You can also list active preview servers anytime in your terminal:
-```bash
-preview list
-```
-
----
-
-## 💾 Workspace Persistence & Backup Mechanism
-
-- **Local Runner Path:** `/home/runner/workspace`
-- **Google Drive Storage Path:** `gdrive:cloud-dev/workspace`
-- **Auto-Sync:** Every 5 minutes in background via `rclone sync`.
-- **Termination Backup:** Triggers on normal completion, session timeout, or manual cancellation (`if: always()`).
-- **Excluded Files:** `node_modules/`, `.next/cache/`, `__pycache__/`, `.venv/`, `.git-credentials`, private keys (`*.pem`, `*.key`), and temporary files are excluded to maintain high sync speed and prevent credential leakage.
-
----
-
-## 🔧 Troubleshooting
-
-| Issue | Cause | Solution |
-| :--- | :--- | :--- |
-| **"Could not obtain a valid Tailscale IPv4"** | `TAILSCALE_AUTHKEY` is missing or expired. | Generate a fresh ephemeral auth key from Tailscale Admin Console and update the GitHub secret. |
-| **"Cannot reach http://100.x.y.z:3080"** | Your client device is not connected to Tailscale. | Open the Tailscale app on your phone or computer and ensure you are logged into the same Tailnet. |
-| **"Website preview refuses connection"** | Server was started on `127.0.0.1` instead of `0.0.0.0`. | Restart server with `--host 0.0.0.0` or `--bind 0.0.0.0`. |
-| **"No remote found in decoded rclone configuration"** | `RCLONE_CONFIG_B64` was not properly base64-encoded. | Re-run `base64 -w 0 ~/.config/rclone/rclone.conf` and update the secret. |
-| **"Session terminates after 6 hours"** | GitHub Actions runner hard limit. | 6 hours (360 minutes) is GitHub's runner limit. Your files are automatically backed up to Google Drive and restored on your next run. |
+5. Open the run and view the **Job Summary** or step logs for your DeepSeek Harness access URL.
+6. When creating web apps, run `preview tunnel <port>` to get an instant public preview URL!

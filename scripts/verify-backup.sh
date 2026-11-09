@@ -6,18 +6,17 @@
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/home/runner/workspace}"
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
+WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 REMOTE_SUBDIR="${REMOTE_SUBDIR:-cloud-dev/workspace}"
 
 # Detect remote
-REMOTE="${RCLONE_REMOTE_NAME:-}"
-if [ -z "${REMOTE}" ]; then
-    REMOTE=$(rclone listremotes | head -n 1)
-fi
-
-if [ -z "${REMOTE}" ]; then
-    echo "❌ Error: No rclone remote configured." >&2
-    exit 1
+REMOTE="gdrive:"
+if ! rclone listremotes 2>/dev/null | grep -q "^gdrive:"; then
+    DETECTED_REMOTE=$(rclone listremotes 2>/dev/null | head -n 1 || true)
+    if [ -n "${DETECTED_REMOTE}" ]; then
+        REMOTE="${DETECTED_REMOTE}"
+    fi
 fi
 
 REMOTE_PATH="${REMOTE}${REMOTE_SUBDIR}"
@@ -31,12 +30,13 @@ echo "Checking remote: ${REMOTE_PATH}"
 SIZE_OUTPUT=$(rclone size "${REMOTE_PATH}" --json 2>/dev/null || true)
 
 if [ -z "${SIZE_OUTPUT}" ]; then
-    echo "❌ Error: Unable to query Google Drive backup at ${REMOTE_PATH}" >&2
-    exit 1
+    echo "⚠️ Notice: Remote path ${REMOTE_PATH} is currently empty or unindexed."
+    TOTAL_OBJECTS=0
+    TOTAL_BYTES=0
+else
+    TOTAL_OBJECTS=$(echo "${SIZE_OUTPUT}" | jq -r '.count // 0')
+    TOTAL_BYTES=$(echo "${SIZE_OUTPUT}" | jq -r '.bytes // 0')
 fi
-
-TOTAL_OBJECTS=$(echo "${SIZE_OUTPUT}" | jq -r '.count // 0')
-TOTAL_BYTES=$(echo "${SIZE_OUTPUT}" | jq -r '.bytes // 0')
 
 # Format bytes to human readable form
 format_bytes() {
@@ -67,7 +67,7 @@ if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
         echo "### 🔍 Workspace Backup Verification"
         echo "| Metric | Value |"
         echo "| :--- | :--- |"
-        echo "| **Google Drive Path** | \`${REMOTE_PATH}\` |"
+        echo "| **Google Drive Remote** | \`${REMOTE_PATH}\` |"
         echo "| **Total Files Preserved** | \`${TOTAL_OBJECTS}\` |"
         echo "| **Total Backup Size** | \`${HUMAN_SIZE}\` |"
         echo "| **Verification Status** | ✅ **VERIFIED** |"

@@ -6,53 +6,75 @@
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/home/runner/workspace}"
+# Resolve local workspace directory
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
+WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 REMOTE_SUBDIR="${REMOTE_SUBDIR:-cloud-dev/workspace}"
 FILTERS_FILE="${FILTERS_FILE:-$(dirname "$0")/rclone-filters.txt}"
 
 echo "=================================================="
 echo "🔄 Initializing Workspace Restoration"
 echo "=================================================="
-echo "Target Workspace Directory: ${WORKSPACE_DIR}"
+echo "Local Workspace Directory: ${WORKSPACE_DIR}"
 
 mkdir -p "${WORKSPACE_DIR}"
 
+# Ensure symlink from /home/runner/workspace to local workspace if running on runner
+if [ -d "/home/runner" ] && [ "${WORKSPACE_DIR}" != "/home/runner/workspace" ]; then
+    ln -sfn "${WORKSPACE_DIR}" /home/runner/workspace 2>/dev/null || true
+fi
+
 # 1. Verify rclone installation
 if ! command -v rclone &>/dev/null; then
-    echo "❌ Error: rclone is not installed." >&2
+    echo "rclone is not installed. Installing rclone..."
+    curl -fsSL https://rclone.org/install.sh | sudo bash
+fi
+
+# 2. Configure Google Drive credentials if RCLONE_CONFIG_B64 is provided
+if [ -n "${RCLONE_CONFIG_B64:-}" ]; then
+    mkdir -p "${HOME}/.config/rclone"
+    echo "${RCLONE_CONFIG_B64}" | base64 -d > "${HOME}/.config/rclone/rclone.conf"
+    chmod 600 "${HOME}/.config/rclone/rclone.conf"
+fi
+
+if [ ! -f "${HOME}/.config/rclone/rclone.conf" ]; then
+    echo "❌ Error: rclone configuration file not found at ${HOME}/.config/rclone/rclone.conf!" >&2
+    echo "Please configure the 'RCLONE_CONFIG_B64' GitHub Secret." >&2
     exit 1
 fi
 
-# 2. Detect configured remote
-REMOTE="${RCLONE_REMOTE_NAME:-}"
-if [ -z "${REMOTE}" ]; then
-    REMOTE=$(rclone listremotes | head -n 1)
+chmod 600 "${HOME}/.config/rclone/rclone.conf"
+
+# 3. Detect and verify remote "gdrive:"
+REMOTE="gdrive:"
+if ! rclone listremotes | grep -q "^gdrive:"; then
+    DETECTED_REMOTE=$(rclone listremotes | head -n 1)
+    if [ -n "${DETECTED_REMOTE}" ]; then
+        REMOTE="${DETECTED_REMOTE}"
+    else
+        echo "❌ Error: No remotes found in rclone configuration." >&2
+        exit 1
+    fi
 fi
 
-if [ -z "${REMOTE}" ]; then
-    echo "❌ Error: No rclone remote configured. Check RCLONE_CONFIG_B64 secret." >&2
-    exit 1
-fi
-
-echo "✅ Detected rclone remote: ${REMOTE}"
+echo "✅ Using authenticated remote: ${REMOTE}"
 REMOTE_PATH="${REMOTE}${REMOTE_SUBDIR}"
-echo "Remote Target Path: ${REMOTE_PATH}"
+echo "Remote Target Path:        ${REMOTE_PATH}"
 
-# 3. Test remote connectivity without leaking credentials
-echo "Checking remote connectivity..."
-if ! rclone about "${REMOTE}" >/dev/null 2>&1; then
-    echo "⚠️ Warning: 'rclone about' check was not available or restricted, continuing with file listing..."
+# 4. Verify Google Drive connectivity without exposing credentials
+echo "Verifying Google Drive connectivity..."
+if ! rclone lsf "${REMOTE}" --max-depth 1 >/dev/null 2>&1; then
+    echo "❌ Error: Failed to connect to Google Drive remote '${REMOTE}'. Please verify your token." >&2
+    exit 1
 fi
+echo "✅ Google Drive connection verified."
 
-# 4. Check if backup exists on Google Drive (Requirement: Handle first run)
-echo "Inspecting remote path for existing workspace backup..."
-EXISTING_FILES=0
-if rclone lsf "${REMOTE_PATH}" --max-depth 1 2>/dev/null | grep -q .; then
-    EXISTING_FILES=1
-fi
+# 5. Check if remote workspace directory exists and has files
+echo "Checking remote path '${REMOTE_PATH}' for existing backup..."
+REMOTE_FILE_COUNT=$(rclone lsf "${REMOTE_PATH}" --recursive --files-only 2>/dev/null | wc -l || echo 0)
 
-if [ "${EXISTING_FILES}" -eq 1 ]; then
-    echo "📦 Existing backup found on Google Drive! Restoring files..."
+if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
+    echo "📦 Existing workspace backup found (${REMOTE_FILE_COUNT} files). Restoring into '${WORKSPACE_DIR}'..."
     
     # Restore with filters and robust retry flags
     rclone copy "${REMOTE_PATH}" "${WORKSPACE_DIR}" \
@@ -65,64 +87,72 @@ if [ "${EXISTING_FILES}" -eq 1 ]; then
         --stats-one-line \
         --stats 5s
 
-    RESTORE_COUNT=$(find "${WORKSPACE_DIR}" -type f | wc -l)
-    echo "✅ Workspace restored successfully (${RESTORE_COUNT} files restored)."
-    
+    LOCAL_RESTORED_COUNT=$(find "${WORKSPACE_DIR}" -type f | wc -l)
+
+    # Safety Check: Never overwrite restored files with an empty workspace
+    if [ "${LOCAL_RESTORED_COUNT}" -eq 0 ]; then
+        echo "❌ Error: Remote backup had ${REMOTE_FILE_COUNT} files, but local restore produced 0 files." >&2
+        echo "Aborting to prevent accidental data loss." >&2
+        exit 1
+    fi
+
+    echo "✅ Workspace restored successfully (${LOCAL_RESTORED_COUNT} files present)."
+    echo "${LOCAL_RESTORED_COUNT}" > /tmp/.workspace_restored
+
     if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
         {
             echo "### 🔄 Workspace Restoration Summary"
             echo "- **Status:** ✅ Successfully Restored from Google Drive"
             echo "- **Remote Path:** \`${REMOTE_PATH}\`"
             echo "- **Local Path:** \`${WORKSPACE_DIR}\`"
-            echo "- **Files Restored:** ${RESTORE_COUNT}"
+            echo "- **Files Restored:** ${LOCAL_RESTORED_COUNT}"
         } >> "${GITHUB_STEP_SUMMARY}"
     fi
 else
-    echo "🌱 First run detected: No existing backup found at '${REMOTE_PATH}'."
-    echo "Initializing a clean workspace with starter documentation and templates..."
+    echo "🌱 First run / empty directory detected: No existing files at '${REMOTE_PATH}'."
+    echo "Initializing clean workspace..."
 
-    # Create initial welcome file
+    # Ensure remote directory exists on Google Drive
+    rclone mkdir "${REMOTE_PATH}" || true
+
+    # Create initial welcome file if not present
     if [ ! -f "${WORKSPACE_DIR}/WELCOME.md" ]; then
         cat << 'EOF' > "${WORKSPACE_DIR}/WELCOME.md"
 # Welcome to Your Cloud Development Workspace!
 
-This cloud development environment is powered by **DeepSeek Harness** on GitHub Actions with continuous **Google Drive** persistence and private **Tailscale** access.
+This persistent workspace is synced with your Google Drive at `gdrive:cloud-dev/workspace`.
 
-### 🌐 Accessing Services via Tailscale
-- **DeepSeek Harness Web UI:** `http://<TAILSCALE_IP>:3080/?token=...`
-- **Website Previews:** `http://<TAILSCALE_IP>:<PORT>`
-  - React/Vite: `npm run dev -- --host 0.0.0.0` (Port 5173)
-  - Next.js: `npx next dev -H 0.0.0.0 -p 3000` (Port 3000)
-  - Python FastAPI: `uvicorn main:app --host 0.0.0.0 --port 8000` (Port 8000)
-  - Python Flask: `flask run --host=0.0.0.0 --port=5000` (Port 5000)
+### 💾 Persistence Features
+- **Auto-Sync:** Changes in this directory are synchronized to Google Drive every 5 minutes.
+- **Final Backup:** A full backup is performed automatically when the workflow completes or is stopped.
+- **Persistence Across Sessions:** All project files, source code, and configurations in this workspace will be automatically restored on your next session.
 
-### 📁 Example Projects
-Starter templates are ready in `/home/runner/workspace/examples`:
-- `examples/react-vite-app`: React + Vite + Tailwind CSS + Lucide
-- `examples/python-fastapi`: FastAPI Python API
-
-### 💾 Persistence
-Everything in this workspace is automatically synchronized to your Google Drive every 5 minutes and upon session completion.
+### 🌐 Previewing Websites
+- To preview websites, start your server with `--host 0.0.0.0` (e.g. `npm run dev -- --host 0.0.0.0`).
+- Use the `preview` CLI command (`preview list` or `preview tunnel <port>`) to create a temporary preview tunnel on demand.
 EOF
     fi
 
-    # Initialize starter templates
-    "$(dirname "$0")/init-templates.sh" || true
+    # Initialize example templates if available
+    if [ -f "$(dirname "$0")/init-templates.sh" ]; then
+        "$(dirname "$0")/init-templates.sh" || true
+    fi
 
-    echo "✅ Clean workspace initialized with starter templates."
+    echo "initial" > /tmp/.workspace_restored
+    echo "✅ Clean workspace initialized."
 
     if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
         {
             echo "### 🔄 Workspace Restoration Summary"
-            echo "- **Status:** 🌱 First run (Clean Workspace Initialized)"
+            echo "- **Status:** 🌱 First run (Initialized Clean Workspace)"
             echo "- **Remote Path:** \`${REMOTE_PATH}\`"
             echo "- **Local Path:** \`${WORKSPACE_DIR}\`"
         } >> "${GITHUB_STEP_SUMMARY}"
     fi
 fi
 
-# Ensure DSH directories exist and permissions are correct
+# Ensure DSH directories exist and permissions are set
 mkdir -p "${WORKSPACE_DIR}/.dsh" "${WORKSPACE_DIR}/.agents"
 chmod -R u+rwX "${WORKSPACE_DIR}"
 
-echo "Workspace preparation complete."
+echo "Workspace restore complete."

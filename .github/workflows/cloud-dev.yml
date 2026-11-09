@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 360
 
     env:
-      WORKSPACE_DIR: /home/runner/workspace
+      WORKSPACE_DIR: ${{ github.workspace }}/workspace
       SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
 
@@ -62,54 +62,38 @@ jobs:
         run: |
           ./scripts/setup-cloud-auth.sh
 
-      - name: Connect to Tailscale Network
+      - name: Connect to Tailscale Network (Optional)
+        if: "${{ secrets.TAILSCALE_AUTHKEY != '' }}"
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           args: --hostname=cloud-dev --accept-routes
 
       - name: Verify Tailscale Connection & Network Identity
+        if: "${{ secrets.TAILSCALE_AUTHKEY != '' }}"
         run: |
           ./scripts/verify-tailscale.sh
 
-      - name: Configure Google Drive Authentication (rclone)
+      - name: Restore Workspace from Google Drive
         env:
           RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
-        run: |
-          set +x
-          if [ -z "${RCLONE_CONFIG_B64}" ]; then
-            echo "::error::GitHub Secret 'RCLONE_CONFIG_B64' is missing! Please configure it in Repository Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-
-          mkdir -p "${HOME}/.config/rclone"
-          echo "${RCLONE_CONFIG_B64}" | base64 -d > "${HOME}/.config/rclone/rclone.conf"
-          chmod 600 "${HOME}/.config/rclone/rclone.conf"
-
-          REMOTE_COUNT=$(rclone listremotes | wc -l)
-          if [ "${REMOTE_COUNT}" -eq 0 ]; then
-            echo "::error::No remote found in decoded rclone configuration. Check your RCLONE_CONFIG_B64."
-            exit 1
-          fi
-          echo "rclone configured successfully with $(rclone listremotes | tr '\n' ' ')"
-
-      - name: Restore Workspace from Google Drive
         run: |
           if [ "${FORCE_CLEAN_RESTORE}" = "true" ]; then
             echo "Force clean restore requested. Skipping remote backup download."
             mkdir -p "${WORKSPACE_DIR}"
             ./scripts/init-templates.sh || true
+            touch /tmp/.workspace_restored
           else
             ./scripts/restore-workspace.sh
           fi
 
       - name: Start 5-Minute Auto-Sync Daemon
         run: |
-          echo "Starting background sync daemon (interval: 300s)..."
+          echo "Starting 5-minute background sync daemon..."
           nohup ./scripts/sync-workspace.sh --daemon 300 > /tmp/sync-daemon.log 2>&1 &
-          echo "Sync daemon started in background."
+          echo "Background sync daemon active."
 
-      - name: Launch DeepSeek Harness (Tailscale Private Access)
+      - name: Launch DeepSeek Harness & Development Environment
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
@@ -122,7 +106,7 @@ jobs:
           if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
             ./scripts/sync-workspace.sh --final
           else
-            echo "rclone configuration not found; skipping backup."
+            echo "rclone configuration not found; skipping final backup."
           fi
 
       - name: Verify Workspace Backup Integrity

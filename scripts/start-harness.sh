@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# start-harness.sh: Launch DeepSeek Harness Web UI with Tailscale-Only Access
-# NO public tunnels (Cloudflare/ngrok removed).
-# Services bind strictly to the private Tailscale network.
+# start-harness.sh: Launch DeepSeek Harness Web UI and Development Environment
+# Preserves preview behavior:
+# - Does NOT automatically create Cloudflare Quick Tunnels on startup.
+# - On-demand Cloudflare tunnels created via 'preview tunnel <port>' or Harness.
+# - Keeps preview servers and tunnels alive while environment is active.
 # ==============================================================================
 
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-/home/runner/workspace}"
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
+WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 PORT="${DSH_PORT:-3080}"
 SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-350}"
 
 export DSH_HOME="${WORKSPACE_DIR}/.dsh"
 export DSH_AGENTS_HOME="${WORKSPACE_DIR}/.agents"
 
-mkdir -p "${DSH_HOME}" "${DSH_AGENTS_HOME}"
+mkdir -p "${DSH_HOME}" "${DSH_AGENTS_HOME}" "${WORKSPACE_DIR}"
 cd "${WORKSPACE_DIR}"
 
 DSH_LOG="/tmp/dsh.log"
@@ -27,61 +30,80 @@ cleanup() {
     echo "=================================================="
     echo "🛑 Shutting Down Cloud Development Session"
     echo "=================================================="
+
+    # Stop preview monitor
     if [ -n "${PREVIEW_MONITOR_PID:-}" ] && kill -0 "${PREVIEW_MONITOR_PID}" 2>/dev/null; then
         echo "Stopping preview monitor (PID: ${PREVIEW_MONITOR_PID})..."
-        kill -SIGTERM "${PREVIEW_MONITOR_PID}" 2>/dev/null || true
+        kill -TERM "${PREVIEW_MONITOR_PID}" 2>/dev/null || true
     fi
+
+    # Clean up any on-demand Cloudflare preview tunnels
+    if [ -d "/tmp/tunnels" ]; then
+        for PID_F in /tmp/tunnels/*.pid; do
+            if [ -f "${PID_F}" ]; then
+                T_PID=$(cat "${PID_F}" 2>/dev/null || true)
+                if [ -n "${T_PID}" ] && kill -0 "${T_PID}" 2>/dev/null; then
+                    echo "Stopping preview tunnel PID ${T_PID}..."
+                    kill -TERM "${T_PID}" 2>/dev/null || true
+                fi
+                rm -f "${PID_F}"
+            fi
+        done
+    fi
+
+    # Stop DeepSeek Harness
     if [ -n "${DSH_PID:-}" ] && kill -0 "${DSH_PID}" 2>/dev/null; then
         echo "Terminating DeepSeek Harness (PID: ${DSH_PID})..."
-        kill -SIGTERM "${DSH_PID}" 2>/dev/null || true
+        kill -TERM "${DSH_PID}" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT SIGTERM SIGINT
 
-# 1. Resolve and verify Tailscale network identity
+# Resolve Network Host
+BIND_HOST="127.0.0.1"
 TAILSCALE_IP="${TAILSCALE_IP:-}"
 if [ -z "${TAILSCALE_IP}" ]; then
     TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
 fi
 
-if [ -z "${TAILSCALE_IP}" ] || [[ ! "${TAILSCALE_IP}" =~ ^100\. ]]; then
-    echo "❌ Error: Valid Tailscale IP not found (${TAILSCALE_IP}). Tailscale is required for private access!" >&2
-    exit 1
+if [ -n "${TAILSCALE_IP}" ] && [[ "${TAILSCALE_IP}" =~ ^100\. ]]; then
+    BIND_HOST="${TAILSCALE_IP}"
+    echo "Tailscale detected: Binding Harness to ${BIND_HOST}"
 fi
 
 TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-}"
 if [ -z "${TAILSCALE_HOSTNAME}" ]; then
-    TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//' || echo "${TAILSCALE_IP}")
+    TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//' || echo "${BIND_HOST}")
 fi
 
 echo "=================================================="
-echo "🛡️ Starting Private DeepSeek Harness on Tailscale"
+echo "🤖 Starting DeepSeek Harness Web UI"
 echo "=================================================="
-echo "Bind Address:       ${TAILSCALE_IP} (tailscale0)"
-echo "Port:               ${PORT}"
-echo "MagicDNS Hostname:  ${TAILSCALE_HOSTNAME}"
-echo "Public Tunnels:     DISABLED"
+echo "Bind Host:       ${BIND_HOST}"
+echo "Port:            ${PORT}"
+echo "Workspace:       ${WORKSPACE_DIR}"
+echo "Preview Tunnels: On-demand only ('preview tunnel <port>')"
 
-# 2. Start the Private Website Preview Monitor in background
-echo "Starting Website Preview Monitor..."
-"$(dirname "$0")/preview-monitor.sh" > /tmp/preview-monitor.log 2>&1 &
-PREVIEW_MONITOR_PID=$!
+# Start preview monitor in background to detect listening development servers
+if [ -f "$(dirname "$0")/preview-monitor.sh" ]; then
+    "$(dirname "$0")/preview-monitor.sh" > /tmp/preview-monitor.log 2>&1 &
+    PREVIEW_MONITOR_PID=$!
+fi
 
-# 3. Launch DeepSeek Harness Web UI bound to Tailscale IP
-# Pass --no-open to avoid xdg-open in headless environment
-# Pass --host to bind strictly to the Tailscale interface
-# Pass --public-url and --trusted-host so dsh creates the authenticated access URL
+# Launch DeepSeek Harness Web UI
 dsh web \
     --no-open \
-    --host "${TAILSCALE_IP}" \
+    --host "${BIND_HOST}" \
     --port "${PORT}" \
-    --public-url "http://${TAILSCALE_IP}:${PORT}" \
-    --trusted-host "${TAILSCALE_IP}" \
+    --public-url "http://${BIND_HOST}:${PORT}" \
+    --trusted-host "${BIND_HOST}" \
     --trusted-host "${TAILSCALE_HOSTNAME}" \
+    --trusted-host "localhost" \
+    --trusted-host "127.0.0.1" \
     > "${DSH_LOG}" 2>&1 &
 DSH_PID=$!
 
-# 4. Wait for Harness to output the authenticated URL
+# Wait for Harness to output the authenticated URL
 echo "Waiting for DeepSeek Harness Web UI to be ready..."
 FINAL_WEB_URL=""
 for i in $(seq 1 45); do
@@ -91,7 +113,6 @@ for i in $(seq 1 45); do
         exit 1
     fi
 
-    # Search for authenticated URL from dsh logs
     if grep -q -i "dsh web:" "${DSH_LOG}" 2>/dev/null; then
         RAW_URL=$(grep -i "dsh web:" "${DSH_LOG}" | head -n 1 | sed -E 's/.*dsh web:[[:space:]]*//')
         if [ -n "${RAW_URL}" ]; then
@@ -102,66 +123,51 @@ for i in $(seq 1 45); do
     sleep 1
 done
 
-# Fallback if specific log format differed
 if [ -z "${FINAL_WEB_URL}" ]; then
-    FINAL_WEB_URL="http://${TAILSCALE_IP}:${PORT}"
+    FINAL_WEB_URL="http://${BIND_HOST}:${PORT}"
 fi
 
-# Also formulate MagicDNS URL with authentication query params
-AUTH_QUERY=$(echo "${FINAL_WEB_URL}" | grep -o -E '\?.*$' || true)
-MAGICDNS_URL="http://${TAILSCALE_HOSTNAME}:${PORT}${AUTH_QUERY}"
-
 echo ""
 echo "================================================================================"
-echo "🔒 DEEPSEEK HARNESS WEB UI IS ONLINE (TAILSCALE PRIVATE ACCESS ONLY)"
+echo "🎉 DEEPSEEK HARNESS WEB UI IS ONLINE"
 echo "================================================================================"
 echo ""
-echo "🔗 Direct Tailscale IP URL:    ${FINAL_WEB_URL}"
-echo "🔗 MagicDNS Hostname URL:     ${MAGICDNS_URL}"
+echo "🔗 Access URL:            ${FINAL_WEB_URL}"
+echo "📁 Workspace Directory:    ${WORKSPACE_DIR}"
+echo "⏱️ Session Duration:       ${SESSION_DURATION_MINUTES} minutes"
+echo "🔄 Persistence:            Auto-syncing to gdrive:cloud-dev/workspace every 5m"
 echo ""
-echo "🌐 Website Previews:           http://${TAILSCALE_IP}:<PREVIEW_PORT>"
-echo "   Example (React/Vite):       npm run dev -- --host 0.0.0.0 (Port 5173)"
-echo "   Example (Next.js):          npx next dev -H 0.0.0.0 -p 3000"
-echo "   Example (FastAPI):          uvicorn main:app --host 0.0.0.0 --port 8000"
-echo ""
-echo "📁 Workspace Directory:        ${WORKSPACE_DIR}"
-echo "⏱️ Session Duration:           ${SESSION_DURATION_MINUTES} minutes (Max 6 hours)"
-echo "🔄 Persistence:                Auto-syncing to Google Drive every 5 minutes"
-echo "🔒 Remote Access Policy:       Tailscale ONLY (Zero public tunnels/ports)"
-echo ""
+echo "🌐 Website Previews:"
+echo "   - Run dev server:       npm run dev -- --host 0.0.0.0"
+echo "   - On-demand Tunnel:     preview tunnel <port> (e.g. preview tunnel 5173)"
+echo "   - List active:          preview list"
 echo "================================================================================"
 echo ""
 
 # Write to GitHub Step Summary
 if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
     {
-        echo "## 🚀 DeepSeek Harness Cloud Environment (Tailscale Private)"
+        echo "## 🚀 DeepSeek Harness Cloud Environment"
         echo ""
-        echo "### 🤖 DeepSeek Harness Web UI"
-        echo "- **Direct Tailscale IP URL:** [${FINAL_WEB_URL}](${FINAL_WEB_URL})"
-        echo "- **MagicDNS URL:** [${MAGICDNS_URL}](${MAGICDNS_URL})"
+        echo "### 🤖 DeepSeek Harness Access"
+        echo "- **Web UI URL:** [${FINAL_WEB_URL}](${FINAL_WEB_URL})"
         echo ""
         echo "```text"
         echo "${FINAL_WEB_URL}"
         echo "```"
         echo ""
-        echo "### 🌐 Private Website Preview Instructions"
-        echo "To preview websites on your authenticated Tailscale device:"
-        echo "1. Run your dev server bound to \`0.0.0.0\`:"
-        echo "   - **Vite:** \`npm run dev -- --host 0.0.0.0\`"
-        echo "   - **Next.js:** \`npx next dev -H 0.0.0.0 -p 3000\`"
-        echo "   - **FastAPI:** \`uvicorn main:app --host 0.0.0.0 --port 8000\`"
-        echo "   - **Static HTML:** \`preview serve <dir> [port]\`"
-        echo "2. Open in browser: \`http://${TAILSCALE_IP}:<PORT>\`"
+        echo "### 🌐 On-Demand Website Preview"
+        echo "To create a Cloudflare Quick Tunnel for any running development server, run in terminal or DeepSeek Harness:"
+        echo "```bash"
+        echo "preview tunnel <port>"
+        echo "# Example: preview tunnel 5173"
+        echo "```"
         echo ""
         echo "### 📋 Session Details"
         echo "- **Status:** 🟢 Active"
-        echo "- **Tailscale IP:** \`${TAILSCALE_IP}\`"
-        echo "- **MagicDNS:** \`${TAILSCALE_HOSTNAME}\`"
         echo "- **Workspace:** \`${WORKSPACE_DIR}\`"
-        echo "- **Auto-sync Interval:** Every 5 minutes to Google Drive"
-        echo ""
-        echo "> **Note:** Access is restricted exclusively to devices on your Tailnet. No public ports or reverse tunnels are created."
+        echo "- **Google Drive Path:** \`gdrive:cloud-dev/workspace\`"
+        echo "- **Auto-sync Interval:** Every 5 minutes"
     } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
@@ -172,7 +178,6 @@ TAIL_PID=$!
 SESSION_SECONDS=$((SESSION_DURATION_MINUTES * 60))
 echo "Session active for ${SESSION_DURATION_MINUTES} minutes (${SESSION_SECONDS}s)..."
 
-# Sleep in increments to remain responsive to SIGTERM
 START_TIME=$(date +%s)
 while true; do
     CURRENT_TIME=$(date +%s)
@@ -183,7 +188,6 @@ while true; do
         break
     fi
 
-    # Check if DSH died
     if ! kill -0 "${DSH_PID}" 2>/dev/null; then
         echo "⚠️ DeepSeek Harness stopped."
         break
