@@ -25,11 +25,13 @@ if ! command -v rclone &>/dev/null; then
 fi
 
 if [ -n "${RCLONE_CONFIG_B64:-}" ]; then
-    mkdir -p "${HOME}/.config/rclone" "/home/${TARGET_USER}/.config/rclone"
+    mkdir -p "${HOME}/.config/rclone"
+    sudo mkdir -p "/home/${TARGET_USER}/.config/rclone" "/root/.config/rclone"
     echo "${RCLONE_CONFIG_B64}" | base64 -d > "${HOME}/.config/rclone/rclone.conf"
     sudo cp "${HOME}/.config/rclone/rclone.conf" "/home/${TARGET_USER}/.config/rclone/rclone.conf"
+    sudo cp "${HOME}/.config/rclone/rclone.conf" "/root/.config/rclone/rclone.conf"
     chmod 600 "${HOME}/.config/rclone/rclone.conf"
-    sudo chmod 600 "/home/${TARGET_USER}/.config/rclone/rclone.conf"
+    sudo chmod 600 "/home/${TARGET_USER}/.config/rclone/rclone.conf" "/root/.config/rclone/rclone.conf"
     sudo chown -R "${TARGET_USER}:${TARGET_USER}" "/home/${TARGET_USER}/.config"
 fi
 
@@ -67,7 +69,7 @@ REMOTE_FILE_COUNT=$(rclone lsf "${REMOTE_WORKSPACE_PATH}" --recursive --files-on
 
 if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
     echo "📦 Found existing workspace backup (${REMOTE_FILE_COUNT} files). Restoring to '${WORKSPACE_DIR}'..."
-    rclone copy "${REMOTE_WORKSPACE_PATH}" "${WORKSPACE_DIR}" \
+    sudo rclone copy "${REMOTE_WORKSPACE_PATH}" "${WORKSPACE_DIR}" \
         --filter-from "${FILTERS_FILE}" \
         --fast-list \
         --transfers 8 \
@@ -81,7 +83,7 @@ if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
     CONFIG_COUNT=$(rclone lsf "${REMOTE_CONFIG_PATH}" --recursive --files-only 2>/dev/null | wc -l || echo 0)
     if [ "${CONFIG_COUNT}" -gt 0 ]; then
         echo "🔧 Restoring safe user configurations from '${REMOTE_CONFIG_PATH}'..."
-        rclone copy "${REMOTE_CONFIG_PATH}" "/home/${TARGET_USER}" \
+        sudo rclone copy "${REMOTE_CONFIG_PATH}" "/home/${TARGET_USER}" \
             --filter-from "${FILTERS_FILE}" \
             --fast-list \
             --retries 3 || true

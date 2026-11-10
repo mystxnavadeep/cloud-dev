@@ -64,7 +64,7 @@ perform_sync() {
     local trash_dir="${REMOTE}cloud-dev/ubuntu-workspace-trash/$(date +%Y%m%d_%H%M%S)"
 
     # Sync workspace
-    rclone sync "${WORKSPACE_DIR}" "${REMOTE_WORKSPACE_PATH}" \
+    sudo rclone sync "${WORKSPACE_DIR}" "${REMOTE_WORKSPACE_PATH}" \
         --filter-from "${FILTERS_FILE}" \
         --backup-dir "${trash_dir}/workspace" \
         --fast-list \
@@ -83,7 +83,7 @@ perform_sync() {
     # Stage safe config files from /home/nava
     for ITEM in .gitconfig .bashrc .bash_aliases .bash_history .zshrc .zsh_history .tmux.conf; do
         if [ -f "/home/${TARGET_USER}/${ITEM}" ]; then
-            cp -p "/home/${TARGET_USER}/${ITEM}" "${config_stage}/" 2>/dev/null || true
+            sudo cp -p "/home/${TARGET_USER}/${ITEM}" "${config_stage}/" 2>/dev/null || true
         fi
     done
 
@@ -91,21 +91,21 @@ perform_sync() {
     if [ -d "/home/${TARGET_USER}/.ssh" ]; then
         mkdir -p "${config_stage}/.ssh"
         if [ -f "/home/${TARGET_USER}/.ssh/authorized_keys" ]; then
-            cp -p "/home/${TARGET_USER}/.ssh/authorized_keys" "${config_stage}/.ssh/" 2>/dev/null || true
+            sudo cp -p "/home/${TARGET_USER}/.ssh/authorized_keys" "${config_stage}/.ssh/" 2>/dev/null || true
         fi
         if [ -f "/home/${TARGET_USER}/.ssh/config" ]; then
-            cp -p "/home/${TARGET_USER}/.ssh/config" "${config_stage}/.ssh/" 2>/dev/null || true
+            sudo cp -p "/home/${TARGET_USER}/.ssh/config" "${config_stage}/.ssh/" 2>/dev/null || true
         fi
     fi
 
     for DIR_ITEM in .gemini .opencode .dsh .agents; do
         if [ -d "/home/${TARGET_USER}/${DIR_ITEM}" ]; then
-            cp -r "/home/${TARGET_USER}/${DIR_ITEM}" "${config_stage}/" 2>/dev/null || true
+            sudo cp -r "/home/${TARGET_USER}/${DIR_ITEM}" "${config_stage}/" 2>/dev/null || true
         fi
     done
 
     # Sync config stage to remote
-    rclone sync "${config_stage}" "${REMOTE_CONFIG_PATH}" \
+    sudo rclone sync "${config_stage}" "${REMOTE_CONFIG_PATH}" \
         --filter-from "${FILTERS_FILE}" \
         --backup-dir "${trash_dir}/config" \
         --fast-list \
@@ -126,7 +126,7 @@ perform_sync() {
   "remote_target": "${REMOTE_PATH}"
 }
 EOF
-    rclone copyto "${manifest}" "${REMOTE_PATH}/manifest.json" 2>/dev/null || true
+    sudo rclone copyto "${manifest}" "${REMOTE_PATH}/manifest.json" 2>/dev/null || true
 
     echo "[$timestamp] ✅ ${sync_type^} sync completed successfully."
     flock -u 200 || true
