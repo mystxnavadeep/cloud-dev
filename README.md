@@ -172,4 +172,42 @@ Add the output string as secret **`RCLONE_CONFIG_B64`** in your GitHub repositor
    - `force_clean_restore`: Leave unchecked (uncheck preserves Google Drive files).
 4. Click **Run workflow**.
 5. Open the run and view the **Job Summary** or step logs for your DeepSeek Harness access URL.
-6. When creating web apps, run `preview tunnel <port>` to get an instant public preview URL!
+---
+
+## 🖥️ Ubuntu Cloud Web Development Studio (`ubuntu-dev.yml`)
+
+A dedicated personal development workstation environment running on Ubuntu 24.04 with an XFCE desktop GUI, XRDP remote desktop, OpenSSH, Tailscale, three permanent tmux terminals, and Google Drive workspace persistence for user `nava`.
+
+### 🌟 Key Studio Features
+- **Personal Linux User:** `nava` (password: `nava`) with passwordless `sudo` access.
+- **Remote Desktop GUI:** XFCE4 desktop via XRDP on port `3389` (tuned to eliminate black screen & Polkit prompts).
+- **Secure Remote Shell:** OpenSSH server on port `22` accessible over private Tailscale network.
+- **3 Permanent Tmux Terminals:**
+  - `terminal-1` (attach with `t1` or `tmux attach -t terminal-1`)
+  - `terminal-2` (attach with `t2` or `tmux attach -t terminal-2`)
+  - `terminal-3` (attach with `t3` or `tmux attach -t terminal-3`)
+- **Full Web Development Toolkit:**
+  - Node.js LTS, npm, pnpm, yarn, Bun, Corepack
+  - TypeScript, tsx, Vite, Next.js, Angular, Astro, Vue, Svelte, Tailwind, PostCSS, Sass
+  - Python 3, uv, FastAPI, Flask, Django, Jupyter
+  - PHP & Composer for backend development
+  - Database clients: SQLite, PostgreSQL, Redis
+  - Browser testing: Playwright, Chromium
+- **AI Coding Agents:**
+  - **Google Antigravity CLI:** `agy`
+  - **OpenCode CLI:** `opencode` (alias `oc`)
+  - **DeepSeek Harness:** `dsh`
+- **Google Drive Persistence:**
+  - Persistent Remote Path: `gdrive:cloud-dev/ubuntu-workspace`
+  - Local Workspace: `/home/nava/workspace`
+  - Auto-syncs changes every 5 minutes and runs a final backup on shutdown.
+  - Trash safety: modified/deleted files are preserved in `gdrive:cloud-dev/ubuntu-workspace-trash/<timestamp>`.
+
+### 🚀 Launching the Ubuntu Studio
+1. Navigate to the **Actions** tab in GitHub.
+2. Select **Ubuntu Cloud Web Development Studio**.
+3. Click **Run workflow** (default duration 350 minutes).
+4. Connect via:
+   - **SSH:** `ssh nava@ubuntu-dev` or `ssh nava@<tailscale-ip>`
+   - **XRDP:** `<tailscale-ip>:3389`, User: `nava`, Password: `nava`
+
