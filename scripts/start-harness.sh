@@ -10,6 +10,9 @@
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 PORT="${DSH_PORT:-3080}"
@@ -68,8 +71,6 @@ cleanup() {
 }
 trap cleanup EXIT SIGTERM SIGINT
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Apply DeepSeek Harness remote cloud authorization fixes
 if [ -f "${SCRIPT_DIR}/patch-dsh.sh" ]; then
     chmod +x "${SCRIPT_DIR}/patch-dsh.sh"
@@ -77,8 +78,8 @@ if [ -f "${SCRIPT_DIR}/patch-dsh.sh" ]; then
 fi
 
 # Deploy cordis patch for in-browser directory browsing
-if [ -f "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" ]; then
-    cp "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" "${DSH_HOME}/cordis.patch.yml" 2>/dev/null || true
+if [ -f "${REPO_ROOT}/config/remote-web.cordis.patch.yml" ]; then
+    cp "${REPO_ROOT}/config/remote-web.cordis.patch.yml" "${DSH_HOME}/cordis.patch.yml" 2>/dev/null || true
 fi
 
 # Resolve Network Host
@@ -146,8 +147,8 @@ if [ -f "${SCRIPT_DIR}/preview-monitor.sh" ]; then
 fi
 
 PATCH_OPT=()
-if [ -f "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" ]; then
-    PATCH_OPT=("--patch" "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml")
+if [ -f "${REPO_ROOT}/config/remote-web.cordis.patch.yml" ]; then
+    PATCH_OPT=("--patch" "${REPO_ROOT}/config/remote-web.cordis.patch.yml")
 fi
 
 # Launch DeepSeek Harness Web UI
