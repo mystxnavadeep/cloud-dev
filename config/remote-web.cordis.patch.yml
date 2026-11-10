@@ -1,0 +1,12 @@
+# ==============================================================================
+# remote-web.cordis.patch.yml: Remote Cloud Dev Overlay for DeepSeek Harness Web UI
+# Pinned to the interactive browse backend (Miller column in-browser file browser)
+# so remote Tailscale clients can browse directories, select folders, and create new folders.
+# ==============================================================================
+
+- id: directory-picker
+  name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+- insert:
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

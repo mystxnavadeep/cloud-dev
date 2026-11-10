@@ -68,6 +68,19 @@ cleanup() {
 }
 trap cleanup EXIT SIGTERM SIGINT
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Apply DeepSeek Harness remote cloud authorization fixes
+if [ -f "${SCRIPT_DIR}/patch-dsh.sh" ]; then
+    chmod +x "${SCRIPT_DIR}/patch-dsh.sh"
+    "${SCRIPT_DIR}/patch-dsh.sh" || echo "⚠️ Warning: patch-dsh.sh encountered non-fatal issues"
+fi
+
+# Deploy cordis patch for in-browser directory browsing
+if [ -f "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" ]; then
+    cp "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" "${DSH_HOME}/cordis.patch.yml" 2>/dev/null || true
+fi
+
 # Resolve Network Host
 BIND_HOST="127.0.0.1"
 ACCESS_HOST="127.0.0.1"
@@ -83,21 +96,39 @@ if [ -z "${TAILSCALE_HOSTNAME}" ]; then
 fi
 
 TRUSTED_ARGS=()
+
+# Always trust loopback authorities
+TRUSTED_ARGS+=("--trusted-host" "localhost")
+TRUSTED_ARGS+=("--trusted-host" "localhost:${PORT}")
+TRUSTED_ARGS+=("--trusted-host" "127.0.0.1")
+TRUSTED_ARGS+=("--trusted-host" "127.0.0.1:${PORT}")
+
+# Always trust MagicDNS short hostname (e.g. cloud-dev)
+TRUSTED_ARGS+=("--trusted-host" "cloud-dev")
+TRUSTED_ARGS+=("--trusted-host" "cloud-dev:${PORT}")
+
+if [ -n "${TAILSCALE_HOSTNAME}" ]; then
+    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_HOSTNAME}")
+    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_HOSTNAME}:${PORT}")
+    SHORT_HOST="${TAILSCALE_HOSTNAME%%.*}"
+    if [ -n "${SHORT_HOST}" ] && [ "${SHORT_HOST}" != "${TAILSCALE_HOSTNAME}" ]; then
+        TRUSTED_ARGS+=("--trusted-host" "${SHORT_HOST}")
+        TRUSTED_ARGS+=("--trusted-host" "${SHORT_HOST}:${PORT}")
+    fi
+fi
+
+if [ -n "${TAILSCALE_IP}" ]; then
+    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_IP}")
+    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_IP}:${PORT}")
+fi
+
 if [ -n "${TAILSCALE_IP}" ] && [[ "${TAILSCALE_IP}" =~ ^100\. ]]; then
     BIND_HOST="${TAILSCALE_IP}"
     ACCESS_HOST="${TAILSCALE_HOSTNAME:-$TAILSCALE_IP}"
     echo "Tailscale detected: Binding Harness to ${BIND_HOST} (Access via http://${ACCESS_HOST}:${PORT})"
-    TRUSTED_ARGS+=("--trusted-host" "${ACCESS_HOST}")
-    TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_IP}")
-    if [ -n "${TAILSCALE_HOSTNAME}" ]; then
-        TRUSTED_ARGS+=("--trusted-host" "${TAILSCALE_HOSTNAME}")
-    fi
     # Also expose via Tailscale Serve if available
     tailscale serve --bg --set-path / "http://${BIND_HOST}:${PORT}" 2>/dev/null || true
 fi
-
-TRUSTED_ARGS+=("--trusted-host" "localhost")
-TRUSTED_ARGS+=("--trusted-host" "127.0.0.1")
 
 echo "=================================================="
 echo "🤖 Starting DeepSeek Harness Web UI"
@@ -109,9 +140,14 @@ echo "Workspace:       ${WORKSPACE_DIR}"
 echo "Preview Tunnels: On-demand only ('preview tunnel <port>')"
 
 # Start preview monitor in background to detect listening development servers
-if [ -f "$(dirname "$0")/preview-monitor.sh" ]; then
-    "$(dirname "$0")/preview-monitor.sh" > /tmp/preview-monitor.log 2>&1 &
+if [ -f "${SCRIPT_DIR}/preview-monitor.sh" ]; then
+    "${SCRIPT_DIR}/preview-monitor.sh" > /tmp/preview-monitor.log 2>&1 &
     PREVIEW_MONITOR_PID=$!
+fi
+
+PATCH_OPT=()
+if [ -f "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml" ]; then
+    PATCH_OPT=("--patch" "${SCRIPT_DIR}/../config/remote-web.cordis.patch.yml")
 fi
 
 # Launch DeepSeek Harness Web UI
@@ -120,6 +156,7 @@ dsh web \
     --host "${BIND_HOST}" \
     --port "${PORT}" \
     --public-url "http://${ACCESS_HOST}:${PORT}" \
+    "${PATCH_OPT[@]}" \
     "${TRUSTED_ARGS[@]}" \
     > "${DSH_LOG}" 2>&1 &
 DSH_PID=$!
@@ -141,6 +178,7 @@ for i in $(seq 1 45); do
                 --host "127.0.0.1" \
                 --port "${PORT}" \
                 --public-url "http://${ACCESS_HOST}:${PORT}" \
+                "${PATCH_OPT[@]}" \
                 "${TRUSTED_ARGS[@]}" \
                 > "${DSH_LOG}" 2>&1 &
             DSH_PID=$!
