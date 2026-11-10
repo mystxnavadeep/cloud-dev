@@ -24,6 +24,10 @@ if [ "${DEEPSEEK_API_KEY:-}" = "add" ]; then
 fi
 
 mkdir -p "${DSH_HOME}" "${DSH_AGENTS_HOME}" "${WORKSPACE_DIR}"
+chmod 700 "${DSH_HOME}" "${DSH_AGENTS_HOME}" 2>/dev/null || true
+if [ -d "${DSH_HOME}" ]; then
+    find "${DSH_HOME}" -type f -exec chmod 600 {} + 2>/dev/null || true
+fi
 cd "${WORKSPACE_DIR}"
 
 DSH_LOG="/tmp/dsh.log"

@@ -151,8 +151,15 @@ EOF
     fi
 fi
 
-# Ensure DSH directories exist and permissions are set
+# Ensure DSH directories exist and permissions are strictly owner-only (assertOwnerOnlyAccess requirement)
 mkdir -p "${WORKSPACE_DIR}/.dsh" "${WORKSPACE_DIR}/.agents"
 chmod -R u+rwX "${WORKSPACE_DIR}"
+if [ -d "${WORKSPACE_DIR}/.dsh" ]; then
+    chmod 700 "${WORKSPACE_DIR}/.dsh" || true
+    find "${WORKSPACE_DIR}/.dsh" -type f -exec chmod 600 {} + || true
+fi
+if [ -d "${WORKSPACE_DIR}/.agents" ]; then
+    chmod 700 "${WORKSPACE_DIR}/.agents" || true
+fi
 
 echo "Workspace restore complete."

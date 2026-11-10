@@ -9,8 +9,8 @@ echo "=================================================="
 echo "📦 Installing System Tools & Dependencies"
 echo "=================================================="
 
-sudo apt-get update -qq
-sudo apt-get install -y -qq \
+sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo apt-get install -y -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
     build-essential \
     curl \
     wget \
@@ -19,12 +19,17 @@ sudo apt-get install -y -qq \
     zip \
     unzip \
     tree \
-    chromium-browser \
     python3-pip \
     pipx \
     ca-certificates
 
 pipx ensurepath || true
+
+# Provide chromium/chromium-browser binary link using preinstalled Chrome or Playwright
+if command -v google-chrome &>/dev/null; then
+    sudo ln -sf "$(command -v google-chrome)" /usr/local/bin/chromium-browser || true
+    sudo ln -sf "$(command -v google-chrome)" /usr/local/bin/chromium || true
+fi
 
 echo "=================================================="
 echo "📦 Installing JavaScript Runtimes & Package Managers"
