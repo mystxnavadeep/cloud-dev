@@ -146,18 +146,12 @@ if [ -f "${SCRIPT_DIR}/preview-monitor.sh" ]; then
     PREVIEW_MONITOR_PID=$!
 fi
 
-PATCH_OPT=()
-if [ -f "${REPO_ROOT}/config/remote-web.cordis.patch.yml" ]; then
-    PATCH_OPT=("--patch" "${REPO_ROOT}/config/remote-web.cordis.patch.yml")
-fi
-
 # Launch DeepSeek Harness Web UI
 dsh web \
     --no-open \
     --host "${BIND_HOST}" \
     --port "${PORT}" \
     --public-url "http://${ACCESS_HOST}:${PORT}" \
-    "${PATCH_OPT[@]}" \
     "${TRUSTED_ARGS[@]}" \
     > "${DSH_LOG}" 2>&1 &
 DSH_PID=$!
@@ -179,7 +173,6 @@ for i in $(seq 1 45); do
                 --host "127.0.0.1" \
                 --port "${PORT}" \
                 --public-url "http://${ACCESS_HOST}:${PORT}" \
-                "${PATCH_OPT[@]}" \
                 "${TRUSTED_ARGS[@]}" \
                 > "${DSH_LOG}" 2>&1 &
             DSH_PID=$!
