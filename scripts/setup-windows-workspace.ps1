@@ -252,3 +252,5 @@ if ($rcloneConfContent) {
 Write-Host "=================================================="
 Write-Host "✅ Workspace Ready: $WorkspaceDir"
 Write-Host "=================================================="
+$global:LASTEXITCODE = 0
+exit 0

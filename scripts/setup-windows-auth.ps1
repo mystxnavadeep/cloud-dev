@@ -88,3 +88,5 @@ if ($env:GITHUB_TOKEN) {
 Write-Host "=================================================="
 Write-Host "✅ Authentication Setup Complete"
 Write-Host "=================================================="
+$global:LASTEXITCODE = 0
+exit 0

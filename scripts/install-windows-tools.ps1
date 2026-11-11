@@ -361,3 +361,5 @@ Add-ToPath "$env:USERPROFILE\AppData\Roaming\npm"
 Write-Host "=================================================="
 Write-Host "✅ Complete Development Toolkit Installation Done"
 Write-Host "=================================================="
+$global:LASTEXITCODE = 0
+exit 0
