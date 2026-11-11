@@ -1,0 +1,228 @@
+name: Windows Cloud Development Studio (RDP + SSH)
+
+on:
+  workflow_dispatch:
+    inputs:
+      hostname:
+        description: "Tailscale device hostname (default: windows-dev)"
+        required: false
+        default: "windows-dev"
+
+jobs:
+  secure-rdp:
+    name: Run Windows Cloud Development Studio
+    runs-on: windows-latest
+    timeout-minutes: 360 # Standard GitHub Actions job max duration (6 hours)
+
+    permissions:
+      contents: write
+      pull-requests: read
+      issues: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure Core RDP Settings
+        shell: powershell
+        run: |
+          # Enable Remote Desktop and disable Network Level Authentication (if needed)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                             -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "SecurityLayer" -Value 0 -Force
+
+          # Remove any existing rule with the same name to avoid duplication
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null | Out-Null
+          
+          # Allow incoming connection on port 3389
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389 | Out-Null
+
+          # Restart the Remote Desktop service to ensure changes take effect
+          Restart-Service -Name TermService -Force
+          Write-Host "✅ Core RDP settings configured."
+
+      - name: Create RDP User with Secure Password
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Security
+          $charSet = @{
+              Upper   = [char[]](65..90)      # A-Z
+              Lower   = [char[]](97..122)     # a-z
+              Number  = [char[]](48..57)      # 0-9
+              Special = ([char[]](33..47) + [char[]](58..64) +
+                         [char[]](91..96) + [char[]](123..126)) # Special characters
+          }
+          $rawPassword = @()
+          $rawPassword += $charSet.Upper | Get-Random -Count 4
+          $rawPassword += $charSet.Lower | Get-Random -Count 4
+          $rawPassword += $charSet.Number | Get-Random -Count 4
+          $rawPassword += $charSet.Special | Get-Random -Count 4
+          $password = -join ($rawPassword | Sort-Object { Get-Random })
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          
+          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
+              Set-LocalUser -Name "RDP" -Password $securePass
+          } else {
+              New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires | Out-Null
+          }
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
+          
+          # Mask password from GitHub Actions logs
+          Write-Host "::add-mask::$password"
+          
+          echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
+          echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
+          
+          if (-not (Get-LocalUser -Name "RDP")) {
+              Write-Error "User creation failed"
+              exit 1
+          }
+          Write-Host "✅ User 'RDP' successfully created and added to Administrators & Remote Desktop Users."
+
+      - name: Configure Workspace & Restore Google Drive Persistence
+        shell: powershell
+        env:
+          RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
+        run: |
+          & .\scripts\setup-windows-workspace.ps1
+
+      - name: Install Complete Web Development Toolkit & Coding Agents
+        shell: powershell
+        run: |
+          & .\scripts\install-windows-tools.ps1
+
+      - name: Authenticate Cloud Platform CLIs (GitHub, Cloudflare, Vercel, DeepSeek)
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          & .\scripts\setup-windows-auth.ps1
+
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
+          Write-Host "✅ Tailscale installed."
+
+      - name: Establish Tailscale Connection
+        shell: powershell
+        run: |
+          $tsAuthKey = "${{ secrets.TAILSCALE_AUTH_KEY || secrets.TS_AUTHKEY || secrets.TAILSCALE_AUTHKEY }}"
+          if (-not $tsAuthKey) {
+              Write-Error "Tailscale auth key (TS_AUTHKEY or TAILSCALE_AUTH_KEY) is not set."
+              exit 1
+          }
+          
+          $targetHostname = if ("${{ inputs.hostname }}") { "${{ inputs.hostname }}" } else { "windows-dev" }
+          
+          # Bring up Tailscale with auth key, custom hostname, SSH enabled, and accepting routes
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+              --authkey=$tsAuthKey `
+              --hostname=$targetHostname `
+              --ssh `
+              --accept-routes
+          
+          # Wait for Tailscale to assign an IP
+          $tsIP = $null
+          $retries = 0
+          while (-not $tsIP -and $retries -lt 12) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              Start-Sleep -Seconds 5
+              $retries++
+          }
+          
+          if (-not $tsIP) {
+              Write-Error "Tailscale IP not assigned. Exiting."
+              exit 1
+          }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          echo "TAILSCALE_HOSTNAME=$targetHostname" >> $env:GITHUB_ENV
+          Write-Host "✅ Connected to Tailscale. IP: $tsIP, Hostname: $targetHostname"
+
+      - name: Start 5-Minute Auto-Sync Daemon
+        shell: powershell
+        run: |
+          $syncPath = "$((Get-Location).Path)\scripts\sync-windows-workspace.ps1"
+          Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass", "-NoProfile", "-File `"$syncPath`"", "-Daemon" -WindowStyle Hidden
+          Write-Host "✅ 5-minute Google Drive auto-sync daemon started in background."
+
+      - name: Verify Windows Runtime Environment & Services
+        shell: powershell
+        run: |
+          & .\scripts\verify-windows-environment.ps1
+
+      - name: Maintain Connection & Display Studio Information
+        shell: powershell
+        run: |
+          $ip = $env:TAILSCALE_IP
+          $hostname = $env:TAILSCALE_HOSTNAME
+          $password = $env:RDP_PASSWORD
+
+          Write-Host ""
+          Write-Host "================================================================================" -ForegroundColor Cyan
+          Write-Host "   🪟 WINDOWS CLOUD WEB DEVELOPMENT STUDIO — LIVE & PERSISTENT" -ForegroundColor Green
+          Write-Host "================================================================================" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "📡 REMOTE ACCESS DETAILS:" -ForegroundColor Yellow
+          Write-Host "   • Tailscale IP:       $ip"
+          Write-Host "   • Tailscale Hostname: $hostname"
+          Write-Host ""
+          Write-Host "🖥️ REMOTE DESKTOP (RDP):" -ForegroundColor Yellow
+          Write-Host "   • Host / Port:        $ip`:3389  (or $hostname`:3389)"
+          Write-Host "   • Username:           RDP"
+          Write-Host "   • Password:           $password"
+          Write-Host ""
+          Write-Host "💻 SECURE SHELL (SSH):" -ForegroundColor Yellow
+          Write-Host "   • SSH Command:        ssh RDP@$ip"
+          Write-Host "   • SSH via Hostname:   ssh RDP@$hostname"
+          Write-Host "   • Runner Admin SSH:   ssh runneradmin@$ip"
+          Write-Host "   • SSH Password:       $password"
+          Write-Host ""
+          Write-Host "📁 PERSISTENT WORKSPACE:" -ForegroundColor Yellow
+          Write-Host "   • Local Path:         C:\Users\runneradmin\workspace"
+          Write-Host "   • RDP User Path:      C:\Users\RDP\workspace (Junction Link)"
+          Write-Host "   • Google Drive Path:  gdrive:cloud-dev/windows-workspace"
+          Write-Host "   • Auto-Sync:          Every 5 minutes in background"
+          Write-Host ""
+          Write-Host "⚡ DEVELOPER SHORTCUTS (PowerShell):" -ForegroundColor Yellow
+          Write-Host "   • 'ws'                -> cd C:\Users\runneradmin\workspace"
+          Write-Host "   • 'projects'          -> cd C:\Users\runneradmin\workspace\projects"
+          Write-Host "   • 'web'               -> cd C:\Users\runneradmin\workspace\web"
+          Write-Host "   • 'oc'                -> OpenCode CLI"
+          Write-Host "   • 'agy'               -> Google Antigravity CLI"
+          Write-Host "   • 'dsh'               -> DeepSeek Harness CLI"
+          Write-Host "   • 'wrangler'          -> Cloudflare Workers & Pages CLI"
+          Write-Host "   • 'vercel'            -> Vercel Deployment CLI"
+          Write-Host "================================================================================" -ForegroundColor Cyan
+          Write-Host ""
+
+          # Maintain connection loop until cancellation or timeout
+          $cycle = 0
+          while ($true) {
+              $cycle++
+              $time = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+              Write-Host "[$time] Windows Studio Active (Cycle #$cycle) — RDP & SSH listening on $ip"
+              Start-Sleep -Seconds 300
+          }
+
+      - name: Final Workspace & Configuration Backup to Google Drive
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Executing final workspace synchronization to Google Drive..."
+          & .\scripts\sync-windows-workspace.ps1 -Final
