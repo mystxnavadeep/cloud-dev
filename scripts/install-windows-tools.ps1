@@ -16,6 +16,40 @@ Write-Host "=================================================="
 Write-Host "📦 Installing Complete Windows Development Toolkit"
 Write-Host "=================================================="
 
+$script:savedPath = $env:PATH
+
+function Ensure-Environment {
+    if ($script:savedPath) {
+        foreach ($p in ($script:savedPath -split ';')) {
+            if ($p -and (Test-Path $p) -and (-not ($env:PATH -split ';' -contains $p))) {
+                $env:PATH = "$p;$env:PATH"
+            }
+        }
+    }
+
+    $extraPaths = @(
+        "C:\npm\prefix",
+        "C:\npm\prefix\bin",
+        "C:\Program Files\nodejs",
+        "$env:APPDATA\npm",
+        "C:\ProgramData\chocolatey\bin",
+        "$env:USERPROFILE\.bun\bin",
+        "$env:USERPROFILE\.cargo\bin",
+        "$env:USERPROFILE\.local\bin",
+        "C:\Users\runneradmin\AppData\Local\agy\bin"
+    )
+
+    Get-ChildItem "C:\hostedtoolcache\windows\node" -Recurse -Filter "node.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+    Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "python.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+    Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "pip.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+
+    foreach ($ep in $extraPaths) {
+        if ($ep -and (Test-Path $ep) -and (-not ($env:PATH -split ';' -contains $ep))) {
+            $env:PATH = "$ep;$env:PATH"
+        }
+    }
+}
+
 # Helper function to add a path to Machine and Process PATH
 function Add-ToPath {
     param([string]$NewPath)
@@ -31,12 +65,7 @@ function Add-ToPath {
     }
 }
 
-# Ensure Node and npm global prefix are in active PATH
-foreach ($initPath in @("C:\npm\prefix", "C:\npm\prefix\bin", "C:\Program Files\nodejs", "$env:APPDATA\npm")) {
-    if (Test-Path $initPath) {
-        Add-ToPath $initPath
-    }
-}
+Ensure-Environment
 
 # 1. Install & Configure OpenSSH Server
 Write-Host "`n[1/9] Configuring OpenSSH Server..."
@@ -107,8 +136,11 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
     }
 }
 
+Ensure-Environment
+
 # 4. Web Framework CLIs & Dev Tools
 Write-Host "`n[4/9] Installing Web Framework CLIs & Linters..."
+Ensure-Environment
 try {
     npm install -g --force `
         typescript `
@@ -136,6 +168,7 @@ try {
 
 # 5. Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)
 Write-Host "`n[5/9] Installing Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)..."
+Ensure-Environment
 try {
     npm install -g --force `
         wrangler `
@@ -149,6 +182,7 @@ try {
 
 # 6. Coding Agents (DeepSeek Harness, OpenCode, Antigravity)
 Write-Host "`n[6/9] Installing Coding Assistants (dsh, opencode, agy)..."
+Ensure-Environment
 
 # DeepSeek Harness (@deepseek-ai/dsh)
 try {
@@ -246,6 +280,7 @@ try {
 }
 
 # Ensure uv via pip as fallback
+Ensure-Environment
 try {
     pip install --no-cache-dir uv virtualenv flask fastapi "uvicorn[standard]" django requests httpx
 } catch {
@@ -254,6 +289,7 @@ try {
 
 # 8. PHP & Composer
 Write-Host "`n[8/9] Installing PHP & Composer..."
+Ensure-Environment
 try {
     if (-not (Get-Command php -ErrorAction SilentlyContinue)) {
         choco install php -y --no-progress
@@ -267,8 +303,9 @@ try {
 
 # 9. Browser Testing (Playwright & Chromium)
 Write-Host "`n[9/9] Configuring Playwright & Chromium..."
+Ensure-Environment
 try {
-    npm install -g playwright lighthouse --no-fund --no-audit
+    npm install -g --force playwright lighthouse --no-fund --no-audit
     npx playwright install chromium
 } catch {
     Write-Warning "Playwright install warning: $_"

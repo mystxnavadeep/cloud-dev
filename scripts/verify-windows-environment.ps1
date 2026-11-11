@@ -18,6 +18,28 @@ $machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 $env:PATH = "C:\npm\prefix;C:\npm\prefix\bin;C:\Program Files\nodejs;C:\ProgramData\chocolatey\bin;C:\Users\runneradmin\AppData\Local\agy\bin;$env:USERPROFILE\.local\bin;$env:USERPROFILE\.bun\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\AppData\Roaming\npm;C:\Users\runneradmin\AppData\Roaming\npm;$machinePath;$userPath;$env:PATH"
 
+$extraPaths = @(
+    "C:\npm\prefix",
+    "C:\npm\prefix\bin",
+    "C:\Program Files\nodejs",
+    "$env:APPDATA\npm",
+    "C:\ProgramData\chocolatey\bin",
+    "$env:USERPROFILE\.bun\bin",
+    "$env:USERPROFILE\.cargo\bin",
+    "$env:USERPROFILE\.local\bin",
+    "C:\Users\runneradmin\AppData\Local\agy\bin",
+    "C:\Users\runneradmin\.local\bin"
+)
+Get-ChildItem "C:\hostedtoolcache\windows\node" -Recurse -Filter "node.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "python.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "pip.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+
+foreach ($ep in $extraPaths) {
+    if ($ep -and (Test-Path $ep) -and (-not ($env:PATH -split ';' -contains $ep))) {
+        $env:PATH = "$ep;$env:PATH"
+    }
+}
+
 Write-Host "=================================================="
 Write-Host "🧪 Running Rigorous Verification of Windows Studio"
 Write-Host "=================================================="
