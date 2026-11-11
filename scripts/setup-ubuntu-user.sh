@@ -6,9 +6,15 @@
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_USER="${TARGET_USER:-nava}"
 TARGET_PASS="${TARGET_PASS:-nava}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-/home/${TARGET_USER}/workspace}"
+
+# Ensure system optimizations (DNS, hosts, mirrors) are applied
+if [ -f "${SCRIPT_DIR}/optimize-ubuntu-system.sh" ]; then
+    "${SCRIPT_DIR}/optimize-ubuntu-system.sh" || true
+fi
 
 echo "=================================================="
 echo "👤 Configuring Persistent Linux User: ${TARGET_USER}"

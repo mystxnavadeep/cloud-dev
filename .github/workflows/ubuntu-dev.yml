@@ -50,6 +50,10 @@ jobs:
         run: |
           chmod +x scripts/*.sh
 
+      - name: Optimize Network, DNS & System Performance
+        run: |
+          ./scripts/optimize-ubuntu-system.sh
+
       - name: Configure Linux User & Permanent Tmux Sessions
         run: |
           ./scripts/setup-ubuntu-user.sh

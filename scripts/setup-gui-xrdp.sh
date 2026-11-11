@@ -6,34 +6,32 @@
 set -eo pipefail
 set +x # Ensure secrets are never echoed in logs
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_USER="${TARGET_USER:-nava}"
 
 echo "=================================================="
 echo "🖥️  Installing & Configuring Ubuntu GUI (XFCE) + XRDP + SSH"
 echo "=================================================="
 
-# Pre-seed debconf selections to prevent hangs on keyboard-configuration & tzdata
-export DEBIAN_FRONTEND=noninteractive
-export APT_LISTCHANGES_FRONTEND=none
+# Apply network, DNS, mirror and debconf optimizations
+if [ -f "${SCRIPT_DIR}/optimize-ubuntu-system.sh" ]; then
+    "${SCRIPT_DIR}/optimize-ubuntu-system.sh" || true
+fi
 
-echo "keyboard-configuration keyboard-configuration/layout select English" | sudo debconf-set-selections 2>/dev/null || true
-echo "keyboard-configuration keyboard-configuration/layoutvariant select US" | sudo debconf-set-selections 2>/dev/null || true
-echo "keyboard-configuration keyboard-configuration/model select Generic 105-key PC (intl.)" | sudo debconf-set-selections 2>/dev/null || true
-echo "tzdata tzdata/Areas select Etc" | sudo debconf-set-selections 2>/dev/null || true
-echo "tzdata tzdata/Zones select UTC" | sudo debconf-set-selections 2>/dev/null || true
-
-# 1. Install lightweight XFCE, XRDP, and OpenSSH Server
-sudo apt-get remove --purge -y needrestart 2>/dev/null || true
-sudo rm -rf /etc/needrestart 2>/dev/null || true
-
-sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+# 1. Install lightweight XFCE core, XRDP, and OpenSSH Server
+sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="5"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+    -o Acquire::http::Timeout="15" -o Acquire::Retries="5" \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
     --no-install-recommends \
-    xfce4 \
+    xfce4-session \
+    xfwm4 \
+    xfdesktop4 \
+    xfce4-panel \
+    xfce4-settings \
     xfce4-terminal \
+    thunar \
     xorgxrdp \
     xrdp \
     dbus-x11 \
