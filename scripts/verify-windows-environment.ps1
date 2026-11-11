@@ -16,7 +16,7 @@ $ErrorActionPreference = "Continue"
 # Refresh Process PATH from Machine and User environments
 $machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-$env:PATH = "$machinePath;$userPath;C:\ProgramData\chocolatey\bin;$env:USERPROFILE\.bun\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\AppData\Roaming\npm;$env:PATH"
+$env:PATH = "$machinePath;$userPath;C:\ProgramData\chocolatey\bin;C:\Users\runneradmin\AppData\Local\agy\bin;$env:USERPROFILE\.local\bin;$env:USERPROFILE\.bun\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\AppData\Roaming\npm;C:\Users\runneradmin\AppData\Roaming\npm;$env:PATH"
 
 Write-Host "=================================================="
 Write-Host "🧪 Running Rigorous Verification of Windows Studio"

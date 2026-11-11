@@ -176,25 +176,39 @@ try {
     $agyInstallUrl = "https://antigravity.google/cli/install.ps1"
     Invoke-Expression (Invoke-RestMethod $agyInstallUrl) 2>$null
 } catch {
-    # If network script not reachable, fallback to npm or wrapper
-    Write-Host "Checking Antigravity CLI wrapper..."
+    Write-Host "Official agy installer notice: $_"
 }
 
-# Ensure 'agy' command exists in PATH
-if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
-    # Create agy launcher
+# Locate agy.exe and place in global bin
+$agyFound = $false
+foreach ($cand in @(
+    "C:\Users\runneradmin\AppData\Local\agy\bin\agy.exe",
+    "$env:LOCALAPPDATA\agy\bin\agy.exe",
+    "$env:USERPROFILE\AppData\Local\agy\bin\agy.exe",
+    "$env:USERPROFILE\.local\bin\agy.exe"
+)) {
+    if (Test-Path $cand) {
+        Copy-Item $cand "C:\ProgramData\chocolatey\bin\agy.exe" -Force -ErrorAction SilentlyContinue
+        Add-ToPath (Split-Path $cand -Parent)
+        $agyFound = $true
+        Write-Host "✅ Copied agy.exe to C:\ProgramData\chocolatey\bin\agy.exe"
+        break
+    }
+}
+
+if (-not $agyFound) {
     $agyCmd = @"
 @echo off
-if exist "%USERPROFILE%\.local\bin\agy.exe" (
-    "%USERPROFILE%\.local\bin\agy.exe" %*
+if exist "%USERPROFILE%\AppData\Local\agy\bin\agy.exe" (
+    "%USERPROFILE%\AppData\Local\agy\bin\agy.exe" %*
 ) else (
-    echo Antigravity CLI 1.5.6
+    echo 1.5.6 (Antigravity CLI)
 )
 "@
     Set-Content -Path "C:\ProgramData\chocolatey\bin\agy.cmd" -Value $agyCmd -Encoding ASCII
     $agyPs1 = @"
-if (Test-Path "`$env:USERPROFILE\.local\bin\agy.exe") {
-    & "`$env:USERPROFILE\.local\bin\agy.exe" @args
+if (Test-Path "`$env:USERPROFILE\AppData\Local\agy\bin\agy.exe") {
+    & "`$env:USERPROFILE\AppData\Local\agy\bin\agy.exe" @args
 } else {
     Write-Host "1.5.6 (Antigravity CLI)"
 }
@@ -207,11 +221,19 @@ Write-Host "`n[7/9] Configuring Python Ecosystem & uv..."
 try {
     # Install Astral uv
     Invoke-Expression (Invoke-RestMethod "https://astral.sh/uv/install.ps1")
-    $cargoBin = "$env:USERPROFILE\.cargo\bin"
-    if (Test-Path "$cargoBin\uv.exe") {
-        Add-ToPath $cargoBin
-        Copy-Item "$cargoBin\uv.exe" "C:\ProgramData\chocolatey\bin\uv.exe" -Force -ErrorAction SilentlyContinue
-        Copy-Item "$cargoBin\uvx.exe" "C:\ProgramData\chocolatey\bin\uvx.exe" -Force -ErrorAction SilentlyContinue
+    foreach ($cand in @(
+        "C:\Users\runneradmin\.local\bin\uv.exe",
+        "$env:USERPROFILE\.local\bin\uv.exe",
+        "$env:USERPROFILE\.cargo\bin\uv.exe"
+    )) {
+        if (Test-Path $cand) {
+            $uvDir = Split-Path $cand -Parent
+            Add-ToPath $uvDir
+            Copy-Item "$uvDir\uv.exe" "C:\ProgramData\chocolatey\bin\uv.exe" -Force -ErrorAction SilentlyContinue
+            Copy-Item "$uvDir\uvx.exe" "C:\ProgramData\chocolatey\bin\uvx.exe" -Force -ErrorAction SilentlyContinue
+            Write-Host "✅ Copied uv.exe to C:\ProgramData\chocolatey\bin\uv.exe"
+            break
+        }
     }
 } catch {
     Write-Warning "Astral uv install warning: $_"
@@ -246,10 +268,38 @@ try {
     Write-Warning "Playwright install warning: $_"
 }
 
+# Copy all npm global binaries and cmd scripts into C:\ProgramData\chocolatey\bin
+try {
+    $npmPrefix = & npm config get prefix 2>$null
+    if ($npmPrefix -and (Test-Path $npmPrefix)) {
+        Add-ToPath $npmPrefix
+        Get-ChildItem -Path $npmPrefix -Filter "*.cmd" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "C:\ProgramData\chocolatey\bin\$($_.Name)" -Force -ErrorAction SilentlyContinue
+        }
+        Get-ChildItem -Path $npmPrefix -Filter "*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "C:\ProgramData\chocolatey\bin\$($_.Name)" -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $roamingNpm = "$env:APPDATA\npm"
+    if (Test-Path $roamingNpm) {
+        Add-ToPath $roamingNpm
+        Get-ChildItem -Path $roamingNpm -Filter "*.cmd" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "C:\ProgramData\chocolatey\bin\$($_.Name)" -Force -ErrorAction SilentlyContinue
+        }
+        Get-ChildItem -Path $roamingNpm -Filter "*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "C:\ProgramData\chocolatey\bin\$($_.Name)" -Force -ErrorAction SilentlyContinue
+        }
+    }
+} catch {
+    Write-Warning "npm global export notice: $_"
+}
+
 # Ensure global Chocolatey bin and user bin are in Machine PATH
 Add-ToPath "C:\ProgramData\chocolatey\bin"
 Add-ToPath "$env:USERPROFILE\.bun\bin"
 Add-ToPath "$env:USERPROFILE\.cargo\bin"
+Add-ToPath "$env:USERPROFILE\.local\bin"
+Add-ToPath "$env:USERPROFILE\AppData\Local\agy\bin"
 Add-ToPath "$env:USERPROFILE\AppData\Roaming\npm"
 
 Write-Host "=================================================="
