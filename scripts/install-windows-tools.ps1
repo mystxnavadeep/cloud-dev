@@ -177,10 +177,20 @@ try {
     Write-Warning "Cloud & Coding CLIs install warning: $_"
 }
 
-# Background/supplementary web packages
-try {
-    npm install -g firebase-tools netlify-cli create-next-app @angular/cli astro webpack webpack-cli parcel --no-fund --no-audit 2>$null
-} catch {}
+# Create lightweight instant shims for Firebase & Netlify CLIs
+$firebaseCmd = @"
+@echo off
+npx --yes firebase-tools %*
+"@
+Set-Content -Path "C:\ProgramData\chocolatey\bin\firebase.cmd" -Value $firebaseCmd -Encoding ASCII
+Set-Content -Path "C:\ProgramData\chocolatey\bin\firebase.ps1" -Value '& npx --yes firebase-tools @args' -Encoding ASCII
+
+$netlifyCmd = @"
+@echo off
+npx --yes netlify-cli %*
+"@
+Set-Content -Path "C:\ProgramData\chocolatey\bin\netlify.cmd" -Value $netlifyCmd -Encoding ASCII
+Set-Content -Path "C:\ProgramData\chocolatey\bin\netlify.ps1" -Value '& npx --yes netlify-cli @args' -Encoding ASCII
 
 # Create 'oc' wrapper command for cmd and PowerShell
 $ocCmd = @"
