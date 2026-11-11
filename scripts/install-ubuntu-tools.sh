@@ -13,11 +13,23 @@ echo "=================================================="
 echo "📦 Installing Complete Web Development Toolkit"
 echo "=================================================="
 
+# Pre-seed debconf selections to prevent hangs on keyboard-configuration & tzdata
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
+
+echo "keyboard-configuration keyboard-configuration/layout select English" | sudo debconf-set-selections 2>/dev/null || true
+echo "keyboard-configuration keyboard-configuration/layoutvariant select US" | sudo debconf-set-selections 2>/dev/null || true
+echo "keyboard-configuration keyboard-configuration/model select Generic 105-key PC (intl.)" | sudo debconf-set-selections 2>/dev/null || true
+echo "tzdata tzdata/Areas select Etc" | sudo debconf-set-selections 2>/dev/null || true
+echo "tzdata tzdata/Zones select UTC" | sudo debconf-set-selections 2>/dev/null || true
+
 # 1. Core Utilities, Databases, Compilers & PHP
 echo "Installing core Linux packages, compilers, database clients, and PHP..."
 sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
     build-essential \
     make \
     gcc \
