@@ -12,10 +12,19 @@ echo "=================================================="
 echo "🖥️  Installing & Configuring Ubuntu GUI (XFCE) + XRDP + SSH"
 echo "=================================================="
 
+# Configure needrestart and non-interactive debconf
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export APT_LISTCHANGES_FRONTEND=none
+sudo mkdir -p /etc/needrestart/conf.d 2>/dev/null || true
+echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/autorestart.conf >/dev/null 2>&1 || true
+
 # 1. Install lightweight XFCE, XRDP, and OpenSSH Server
-sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq \
     -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
     --no-install-recommends \
     xfce4 \
     xfce4-terminal \

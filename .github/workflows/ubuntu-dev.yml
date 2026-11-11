@@ -31,6 +31,9 @@ jobs:
       REMOTE_SUBDIR: cloud-dev/ubuntu-workspace
       SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
+      DEBIAN_FRONTEND: noninteractive
+      NEEDRESTART_MODE: a
+      APT_LISTCHANGES_FRONTEND: none
 
     steps:
       - name: Checkout Repository
