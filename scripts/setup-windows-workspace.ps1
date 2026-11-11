@@ -168,6 +168,15 @@ if ($rcloneConfContent) {
 
     # 6. Restore Workspace from Google Drive
     Write-Host "`n📥 Restoring persistent workspace from Google Drive (gdrive:$RemoteSubdir)..."
+    if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
+        Write-Host "Installing rclone for workspace restoration..."
+        try {
+            choco install rclone -y --no-progress
+            $env:PATH = "C:\ProgramData\chocolatey\bin;$env:PATH"
+        } catch {
+            Write-Warning "Could not install rclone via Chocolatey: $_"
+        }
+    }
     if (Get-Command rclone -ErrorAction SilentlyContinue) {
         try {
             # Test connectivity to remote

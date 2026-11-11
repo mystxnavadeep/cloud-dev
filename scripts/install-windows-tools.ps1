@@ -11,6 +11,7 @@
 param()
 
 $ErrorActionPreference = "Continue"
+$ProgressPreference = "SilentlyContinue"
 
 Write-Host "=================================================="
 Write-Host "📦 Installing Complete Windows Development Toolkit"
@@ -120,7 +121,7 @@ Write-Host "rclone version: $(rclone --version | Select-Object -First 1)"
 # 3. Node.js Ecosystem & Package Managers (pnpm, yarn, corepack, bun)
 Write-Host "`n[3/9] Configuring Node.js Ecosystem (pnpm, yarn, Corepack, Bun)..."
 try {
-    npm install -g --force pnpm yarn corepack --no-fund --no-audit
+    npm install -g pnpm yarn corepack --no-fund --no-audit
     corepack enable 2>$null
 } catch {
     Write-Warning "npm global package install warning: $_"
@@ -147,23 +148,14 @@ Ensure-Environment
 Write-Host "`n[4/9] Installing Web Framework CLIs & Linters..."
 Ensure-Environment
 try {
-    npm install -g --force `
+    npm install -g `
         typescript `
         ts-node `
         tsx `
         vite `
-        create-next-app `
-        @angular/cli `
-        astro `
         tailwindcss `
-        postcss `
-        postcss-cli `
-        sass `
         eslint `
         prettier `
-        webpack `
-        webpack-cli `
-        parcel `
         serve `
         http-server `
         --no-fund --no-audit
@@ -171,41 +163,24 @@ try {
     Write-Warning "Web tools install warning: $_"
 }
 
-# 5. Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)
-Write-Host "`n[5/9] Installing Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)..."
+# 5. Cloud Platform CLIs & Coding Assistants
+Write-Host "`n[5/9] Installing Cloud Platform CLIs & Coding Assistants..."
 Ensure-Environment
 try {
-    npm install -g --force `
+    npm install -g `
         wrangler `
         vercel `
-        firebase-tools `
-        netlify-cli `
+        @deepseek-ai/dsh@next `
+        @opencode/cli `
         --no-fund --no-audit
 } catch {
-    Write-Warning "Cloud CLIs install warning: $_"
+    Write-Warning "Cloud & Coding CLIs install warning: $_"
 }
 
-# 6. Coding Agents (DeepSeek Harness, OpenCode, Antigravity)
-Write-Host "`n[6/9] Installing Coding Assistants (dsh, opencode, agy)..."
-Ensure-Environment
-
-# DeepSeek Harness (@deepseek-ai/dsh)
+# Background/supplementary web packages
 try {
-    npm install -g --force @deepseek-ai/dsh@next --no-fund --no-audit
-} catch {
-    try {
-        npm install -g --force @deepseek-ai/dsh --no-fund --no-audit
-    } catch {
-        Write-Warning "dsh install warning: $_"
-    }
-}
-
-# OpenCode CLI & Alias 'oc'
-try {
-    npm install -g --force @opencode/cli --no-fund --no-audit
-} catch {
-    Write-Warning "opencode install warning: $_"
-}
+    npm install -g firebase-tools netlify-cli create-next-app @angular/cli astro webpack webpack-cli parcel --no-fund --no-audit 2>$null
+} catch {}
 
 # Create 'oc' wrapper command for cmd and PowerShell
 $ocCmd = @"
@@ -301,7 +276,11 @@ try {
         Write-Host "Downloading portable PHP 8.3..."
         New-Item -ItemType Directory -Path $phpDir -Force | Out-Null
         $phpZip = "$env:TEMP\php.zip"
-        Invoke-WebRequest -Uri "https://windows.php.net/downloads/releases/php-8.3.16-nts-Win32-vs16-x64.zip" -OutFile $phpZip -UseBasicParsing
+        $phpUrl = "https://windows.php.net/downloads/releases/php-8.3.36-1-nts-Win32-vs16-x64.zip"
+        curl.exe -sL -o $phpZip $phpUrl
+        if (-not (Test-Path $phpZip)) {
+            Invoke-WebRequest -Uri $phpUrl -OutFile $phpZip -UseBasicParsing
+        }
         Expand-Archive -Path $phpZip -DestinationPath $phpDir -Force
         if (Test-Path "$phpDir\php.ini-development") {
             Copy-Item "$phpDir\php.ini-development" "$phpDir\php.ini" -Force
@@ -314,7 +293,7 @@ try {
     if (-not (Get-Command composer -ErrorAction SilentlyContinue)) {
         $composerDir = "C:\ProgramData\ComposerSetup\bin"
         if (-not (Test-Path $composerDir)) { New-Item -ItemType Directory -Path $composerDir -Force | Out-Null }
-        Invoke-WebRequest -Uri "https://getcomposer.org/composer.phar" -OutFile "$composerDir\composer.phar" -UseBasicParsing
+        curl.exe -sL -o "$composerDir\composer.phar" "https://getcomposer.org/composer.phar"
         $composerBat = @"
 @echo off
 php "%~dp0composer.phar" %*
@@ -333,12 +312,12 @@ php "%~dp0composer.phar" %*
 Write-Host "`n[9/9] Configuring Playwright & Chromium..."
 Ensure-Environment
 try {
-    npm install -g --force playwright lighthouse --no-fund --no-audit
-    $proc = Start-Process -FilePath "npx.cmd" -ArgumentList "--yes playwright install chromium" -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+    npm install -g playwright lighthouse --no-fund --no-audit
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes playwright install chromium" -NoNewWindow -PassThru -ErrorAction SilentlyContinue
     if ($proc) {
-        if (-not $proc.WaitForExit(90000)) {
+        if (-not $proc.WaitForExit(60000)) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Warning "Playwright install timed out after 90s, continuing..."
+            Write-Warning "Playwright install timed out after 60s, continuing..."
         }
     }
 } catch {
