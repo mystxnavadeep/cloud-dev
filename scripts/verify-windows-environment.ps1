@@ -155,9 +155,12 @@ if (Test-Path $WorkspaceDir) {
 Write-Host "`n=================================================="
 if ($script:failedCount -eq 0) {
     Write-Host "🎉 ALL VERIFICATION CHECKS PASSED (0 Failures)" -ForegroundColor Green
+    Write-Host "=================================================="
+    $global:LASTEXITCODE = 0
+    exit 0
 } else {
     Write-Host "❌ VERIFICATION COMPLETED WITH $($script:failedCount) FAILURE(S)" -ForegroundColor Red
     Write-Error "Verification failed with $($script:failedCount) missing component(s)."
+    $global:LASTEXITCODE = 1
     exit 1
 }
-Write-Host "=================================================="

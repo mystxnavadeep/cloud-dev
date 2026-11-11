@@ -201,28 +201,37 @@ Set-Content -Path "C:\ProgramData\chocolatey\bin\oc.cmd" -Value $ocCmd -Encoding
 Set-Content -Path "C:\ProgramData\chocolatey\bin\oc.ps1" -Value 'opencode @args' -Encoding ASCII
 
 # Google Antigravity CLI (agy)
-try {
-    # Attempt official installer
-    $agyInstallUrl = "https://antigravity.google/cli/install.ps1"
-    Invoke-Expression (Invoke-RestMethod $agyInstallUrl) 2>$null
-} catch {
-    Write-Host "Official agy installer notice: $_"
+$agyDir = "C:\Users\runneradmin\AppData\Local\agy\bin"
+if (-not (Test-Path $agyDir)) { New-Item -ItemType Directory -Path $agyDir -Force | Out-Null }
+$agyExe = "$agyDir\agy.exe"
+if (-not (Test-Path $agyExe)) {
+    try {
+        $agyUrl = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.6-6212266538958848/windows-x64/cli_windows_x64.exe"
+        curl.exe -sL -o $agyExe $agyUrl
+    } catch {
+        Write-Host "Direct agy download notice: $_"
+    }
 }
 
-# Locate agy.exe and place in global bin
 $agyFound = $false
-foreach ($cand in @(
-    "C:\Users\runneradmin\AppData\Local\agy\bin\agy.exe",
-    "$env:LOCALAPPDATA\agy\bin\agy.exe",
-    "$env:USERPROFILE\AppData\Local\agy\bin\agy.exe",
-    "$env:USERPROFILE\.local\bin\agy.exe"
-)) {
-    if (Test-Path $cand) {
-        Copy-Item $cand "C:\ProgramData\chocolatey\bin\agy.exe" -Force -ErrorAction SilentlyContinue
-        Add-ToPath (Split-Path $cand -Parent)
-        $agyFound = $true
-        Write-Host "✅ Copied agy.exe to C:\ProgramData\chocolatey\bin\agy.exe"
-        break
+if (Test-Path $agyExe) {
+    Copy-Item $agyExe "C:\ProgramData\chocolatey\bin\agy.exe" -Force -ErrorAction SilentlyContinue
+    Add-ToPath $agyDir
+    $agyFound = $true
+    Write-Host "✅ Copied agy.exe to C:\ProgramData\chocolatey\bin\agy.exe"
+} else {
+    foreach ($cand in @(
+        "$env:LOCALAPPDATA\agy\bin\agy.exe",
+        "$env:USERPROFILE\AppData\Local\agy\bin\agy.exe",
+        "$env:USERPROFILE\.local\bin\agy.exe"
+    )) {
+        if (Test-Path $cand) {
+            Copy-Item $cand "C:\ProgramData\chocolatey\bin\agy.exe" -Force -ErrorAction SilentlyContinue
+            Add-ToPath (Split-Path $cand -Parent)
+            $agyFound = $true
+            Write-Host "✅ Copied agy.exe to C:\ProgramData\chocolatey\bin\agy.exe"
+            break
+        }
     }
 }
 
@@ -291,7 +300,11 @@ try {
         if (-not (Test-Path $phpZip)) {
             Invoke-WebRequest -Uri $phpUrl -OutFile $phpZip -UseBasicParsing
         }
-        Expand-Archive -Path $phpZip -DestinationPath $phpDir -Force
+        if (Get-Command tar.exe -ErrorAction SilentlyContinue) {
+            tar.exe -xf $phpZip -C $phpDir
+        } else {
+            Expand-Archive -Path $phpZip -DestinationPath $phpDir -Force
+        }
         if (Test-Path "$phpDir\php.ini-development") {
             Copy-Item "$phpDir\php.ini-development" "$phpDir\php.ini" -Force
             (Get-Content "$phpDir\php.ini") -replace ';extension=curl', 'extension=curl' -replace ';extension=openssl', 'extension=openssl' -replace ';extension=mbstring', 'extension=mbstring' | Set-Content "$phpDir\php.ini"
