@@ -20,15 +20,21 @@ Write-Host "=================================================="
 function Add-ToPath {
     param([string]$NewPath)
     if (Test-Path $NewPath) {
-        $currentProcessPath = [Environment]::GetEnvironmentVariable("PATH", "Process")
-        if (-not ($currentProcessPath -split ';' -contains $NewPath)) {
-            [Environment]::SetEnvironmentVariable("PATH", "$NewPath;$currentProcessPath", "Process")
+        if (-not ($env:PATH -split ';' -contains $NewPath)) {
+            $env:PATH = "$NewPath;$env:PATH"
         }
         $currentMachinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
         if (-not ($currentMachinePath -split ';' -contains $NewPath)) {
             [Environment]::SetEnvironmentVariable("PATH", "$NewPath;$currentMachinePath", "Machine")
             Write-Host "Added to Machine PATH: $NewPath"
         }
+    }
+}
+
+# Ensure Node and npm global prefix are in active PATH
+foreach ($initPath in @("C:\npm\prefix", "C:\npm\prefix\bin", "C:\Program Files\nodejs", "$env:APPDATA\npm")) {
+    if (Test-Path $initPath) {
+        Add-ToPath $initPath
     }
 }
 
@@ -80,7 +86,7 @@ Write-Host "rclone version: $(rclone --version | Select-Object -First 1)"
 # 3. Node.js Ecosystem & Package Managers (pnpm, yarn, corepack, bun)
 Write-Host "`n[3/9] Configuring Node.js Ecosystem (pnpm, yarn, Corepack, Bun)..."
 try {
-    npm install -g pnpm yarn corepack --no-fund --no-audit
+    npm install -g --force pnpm yarn corepack --no-fund --no-audit
     corepack enable 2>$null
 } catch {
     Write-Warning "npm global package install warning: $_"
@@ -104,7 +110,7 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
 # 4. Web Framework CLIs & Dev Tools
 Write-Host "`n[4/9] Installing Web Framework CLIs & Linters..."
 try {
-    npm install -g `
+    npm install -g --force `
         typescript `
         ts-node `
         tsx `
@@ -131,7 +137,7 @@ try {
 # 5. Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)
 Write-Host "`n[5/9] Installing Cloud Platform CLIs (Wrangler, Vercel, Firebase, Netlify)..."
 try {
-    npm install -g `
+    npm install -g --force `
         wrangler `
         vercel `
         firebase-tools `
@@ -146,10 +152,10 @@ Write-Host "`n[6/9] Installing Coding Assistants (dsh, opencode, agy)..."
 
 # DeepSeek Harness (@deepseek-ai/dsh)
 try {
-    npm install -g @deepseek-ai/dsh@next --no-fund --no-audit
+    npm install -g --force @deepseek-ai/dsh@next --no-fund --no-audit
 } catch {
     try {
-        npm install -g @deepseek-ai/dsh --no-fund --no-audit
+        npm install -g --force @deepseek-ai/dsh --no-fund --no-audit
     } catch {
         Write-Warning "dsh install warning: $_"
     }
@@ -157,7 +163,7 @@ try {
 
 # OpenCode CLI & Alias 'oc'
 try {
-    npm install -g @opencode/cli --no-fund --no-audit
+    npm install -g --force @opencode/cli --no-fund --no-audit
 } catch {
     Write-Warning "opencode install warning: $_"
 }
