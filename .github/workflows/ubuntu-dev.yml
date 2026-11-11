@@ -21,7 +21,7 @@ concurrency:
 jobs:
   ubuntu-studio:
     name: Run Ubuntu Cloud Web Development Studio
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 360
 
     env:
@@ -31,8 +31,6 @@ jobs:
       REMOTE_SUBDIR: cloud-dev/ubuntu-workspace
       SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
-      DEBIAN_FRONTEND: noninteractive
-      APT_LISTCHANGES_FRONTEND: none
 
     steps:
       - name: Checkout Repository
@@ -47,18 +45,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
-      - name: Optimize APT & System Performance
-        run: |
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
-          echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
-          sudo systemctl stop unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
-          sudo killall apt apt-get dpkg unattended-upgrade 2>/dev/null || true
-          sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
-          sudo apt-get remove --purge -y needrestart 2>/dev/null || true
-          sudo rm -rf /etc/needrestart 2>/dev/null || true
-          sudo dpkg --configure -a 2>/dev/null || true
 
       - name: Set Script Permissions
         run: |

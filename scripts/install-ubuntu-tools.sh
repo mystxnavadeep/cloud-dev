@@ -13,20 +13,11 @@ echo "=================================================="
 echo "📦 Installing Complete Web Development Toolkit"
 echo "=================================================="
 
-# Configure non-interactive debconf & force IPv4
-export DEBIAN_FRONTEND=noninteractive
-export APT_LISTCHANGES_FRONTEND=none
-echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null 2>&1 || true
-
 # 1. Core Utilities, Databases, Compilers & PHP
 echo "Installing core Linux packages, compilers, database clients, and PHP..."
-sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
-sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    -o Acquire::ForceIPv4=true \
-    -o Acquire::http::Timeout="15" \
-    -o Acquire::Retries="3" \
-    -o Dpkg::Options::="--force-confdef" \
-    -o Dpkg::Options::="--force-confold" \
+sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
     build-essential \
     make \
     gcc \

@@ -12,29 +12,10 @@ echo "=================================================="
 echo "🖥️  Installing & Configuring Ubuntu GUI (XFCE) + XRDP + SSH"
 echo "=================================================="
 
-# Configure non-interactive debconf & force IPv4
-export DEBIAN_FRONTEND=noninteractive
-export APT_LISTCHANGES_FRONTEND=none
-echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null 2>&1 || true
-
-# Purge needrestart to avoid restarting runner services (e.g. hosted-compute-agent)
-sudo apt-get remove --purge -y needrestart 2>/dev/null || true
-sudo rm -rf /etc/needrestart 2>/dev/null || true
-
-# Clear any concurrent apt locks
-sudo systemctl stop unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
-sudo killall apt apt-get dpkg unattended-upgrade 2>/dev/null || true
-sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
-sudo dpkg --configure -a 2>/dev/null || true
-
 # 1. Install lightweight XFCE, XRDP, and OpenSSH Server
-sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
-sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    -o Acquire::ForceIPv4=true \
-    -o Acquire::http::Timeout="15" \
-    -o Acquire::Retries="3" \
-    -o Dpkg::Options::="--force-confdef" \
-    -o Dpkg::Options::="--force-confold" \
+sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
     --no-install-recommends \
     xfce4 \
     xfce4-terminal \
@@ -114,20 +95,10 @@ EOF
 # Ensure SSH host keys exist
 sudo ssh-keygen -A 2>/dev/null || true
 
-# 6. Start / Restart Services with timeout protection (Ubuntu 24.04 socket-activation safe)
+# 6. Start / Restart Services
 echo "Starting OpenSSH and XRDP services..."
-sudo mkdir -p /run/sshd /var/run/sshd
-sudo sshd -t 2>/dev/null || true
-sudo systemctl daemon-reload 2>/dev/null || true
-
-timeout 5s sudo systemctl restart ssh.socket 2>/dev/null || \
-timeout 5s sudo systemctl restart ssh 2>/dev/null || \
-timeout 5s sudo service ssh restart 2>/dev/null || \
-sudo /usr/sbin/sshd 2>/dev/null || true
-
-timeout 5s sudo systemctl restart xrdp 2>/dev/null || \
-timeout 5s sudo service xrdp restart 2>/dev/null || \
-(sudo xrdp-sesman 2>/dev/null; sudo xrdp 2>/dev/null) || true
+sudo service ssh restart || sudo systemctl restart ssh || true
+sudo service xrdp restart || sudo systemctl restart xrdp || true
 
 # 7. Verify listening ports
 sleep 2
