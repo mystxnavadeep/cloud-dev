@@ -37,9 +37,11 @@ function Ensure-Environment {
         "$env:USERPROFILE\.cargo\bin",
         "$env:USERPROFILE\.local\bin",
         "C:\Users\runneradmin\AppData\Local\agy\bin",
+        "C:\tools\php",
         "C:\tools\php84",
         "C:\tools\php83",
-        "C:\tools\php82"
+        "C:\tools\php82",
+        "C:\ProgramData\ComposerSetup\bin"
     )
 
     Resolve-Path "C:\hostedtoolcache\windows\node\*\x64" 2>$null | ForEach-Object { $extraPaths += $_.Path }
@@ -294,19 +296,25 @@ try {
 Write-Host "`n[8/9] Installing PHP & Composer..."
 Ensure-Environment
 try {
-    if (-not (Get-Command php -ErrorAction SilentlyContinue)) {
-        choco install php -y --no-progress
-        foreach ($phpDir in @("C:\tools\php84", "C:\tools\php83", "C:\tools\php82", "C:\ProgramData\chocolatey\lib\php\tools")) {
-            if (Test-Path $phpDir) {
-                Add-ToPath $phpDir
-                break
-            }
+    $phpDir = "C:\tools\php"
+    if (-not (Test-Path "$phpDir\php.exe")) {
+        Write-Host "Downloading portable PHP 8.3..."
+        New-Item -ItemType Directory -Path $phpDir -Force | Out-Null
+        $phpZip = "$env:TEMP\php.zip"
+        Invoke-WebRequest -Uri "https://windows.php.net/downloads/releases/php-8.3.16-nts-Win32-vs16-x64.zip" -OutFile $phpZip -UseBasicParsing
+        Expand-Archive -Path $phpZip -DestinationPath $phpDir -Force
+        if (Test-Path "$phpDir\php.ini-development") {
+            Copy-Item "$phpDir\php.ini-development" "$phpDir\php.ini" -Force
+            (Get-Content "$phpDir\php.ini") -replace ';extension=curl', 'extension=curl' -replace ';extension=openssl', 'extension=openssl' -replace ';extension=mbstring', 'extension=mbstring' | Set-Content "$phpDir\php.ini"
         }
+        Add-ToPath $phpDir
+        Copy-Item "$phpDir\php.exe" "C:\ProgramData\chocolatey\bin\php.exe" -Force -ErrorAction SilentlyContinue
+        Write-Host "✅ PHP 8.3 installed successfully."
     }
     if (-not (Get-Command composer -ErrorAction SilentlyContinue)) {
         $composerDir = "C:\ProgramData\ComposerSetup\bin"
         if (-not (Test-Path $composerDir)) { New-Item -ItemType Directory -Path $composerDir -Force | Out-Null }
-        Invoke-WebRequest -Uri "https://getcomposer.org/composer.phar" -OutFile "$composerDir\composer.phar"
+        Invoke-WebRequest -Uri "https://getcomposer.org/composer.phar" -OutFile "$composerDir\composer.phar" -UseBasicParsing
         $composerBat = @"
 @echo off
 php "%~dp0composer.phar" %*
@@ -326,7 +334,13 @@ Write-Host "`n[9/9] Configuring Playwright & Chromium..."
 Ensure-Environment
 try {
     npm install -g --force playwright lighthouse --no-fund --no-audit
-    & npx --yes playwright install chromium
+    $proc = Start-Process -FilePath "npx.cmd" -ArgumentList "--yes playwright install chromium" -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+    if ($proc) {
+        if (-not $proc.WaitForExit(90000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Warning "Playwright install timed out after 90s, continuing..."
+        }
+    }
 } catch {
     Write-Warning "Playwright install warning: $_"
 }

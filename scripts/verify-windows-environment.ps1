@@ -29,6 +29,7 @@ $extraPaths = @(
     "$env:USERPROFILE\.local\bin",
     "C:\Users\runneradmin\AppData\Local\agy\bin",
     "C:\Users\runneradmin\.local\bin",
+    "C:\tools\php",
     "C:\tools\php84",
     "C:\tools\php83",
     "C:\tools\php82",
@@ -115,6 +116,8 @@ Test-Tool "uv" "Astral uv Tool"
 Test-Tool "git" "Git Version Control"
 Test-Tool "gh" "GitHub CLI"
 Test-Tool "rclone" "Rclone Cloud Sync"
+Test-Tool "php" "PHP Runtime" "-v"
+Test-Tool "composer" "Composer Dependency Manager" "--version"
 
 Write-Host "`n--- 3. Verifying Cloud Platform & Coding Agent CLIs ---"
 Test-Tool "wrangler" "Cloudflare Wrangler CLI"
