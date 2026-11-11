@@ -17,14 +17,17 @@ echo "=================================================="
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 export APT_LISTCHANGES_FRONTEND=none
+echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null 2>&1 || true
 sudo mkdir -p /etc/needrestart/conf.d 2>/dev/null || true
 echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/autorestart.conf >/dev/null 2>&1 || true
 
 # 1. Core Utilities, Databases, Compilers & PHP
 echo "Installing core Linux packages, compilers, database clients, and PHP..."
-sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
-sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq \
-    -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y \
+    -o Acquire::ForceIPv4=true \
+    -o Acquire::http::Timeout="15" \
+    -o Acquire::Retries="3" \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
     build-essential \

@@ -12,17 +12,26 @@ echo "=================================================="
 echo "🖥️  Installing & Configuring Ubuntu GUI (XFCE) + XRDP + SSH"
 echo "=================================================="
 
-# Configure needrestart and non-interactive debconf
+# Configure needrestart, force IPv4, and non-interactive debconf
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 export APT_LISTCHANGES_FRONTEND=none
+echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null 2>&1 || true
 sudo mkdir -p /etc/needrestart/conf.d 2>/dev/null || true
 echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/autorestart.conf >/dev/null 2>&1 || true
 
+# Clear any concurrent apt locks
+sudo systemctl stop unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+sudo killall apt apt-get dpkg unattended-upgrade 2>/dev/null || true
+sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+sudo dpkg --configure -a 2>/dev/null || true
+
 # 1. Install lightweight XFCE, XRDP, and OpenSSH Server
-sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
-sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq \
-    -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
+sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y \
+    -o Acquire::ForceIPv4=true \
+    -o Acquire::http::Timeout="15" \
+    -o Acquire::Retries="3" \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
     --no-install-recommends \
