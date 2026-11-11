@@ -130,11 +130,10 @@ jobs:
           
           $targetHostname = if ("${{ inputs.hostname }}") { "${{ inputs.hostname }}" } else { "windows-dev" }
           
-          # Bring up Tailscale with auth key, custom hostname, SSH enabled, and accepting routes
+          # Bring up Tailscale with auth key, custom hostname, and accepting routes
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
               --authkey=$tsAuthKey `
               --hostname=$targetHostname `
-              --ssh `
               --accept-routes
           
           # Wait for Tailscale to assign an IP

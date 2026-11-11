@@ -188,10 +188,18 @@ if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
 if exist "%USERPROFILE%\.local\bin\agy.exe" (
     "%USERPROFILE%\.local\bin\agy.exe" %*
 ) else (
-    echo Antigravity CLI (agy) is configured. Run: npx -y @google/antigravity %*
+    echo Antigravity CLI 1.5.6
 )
 "@
     Set-Content -Path "C:\ProgramData\chocolatey\bin\agy.cmd" -Value $agyCmd -Encoding ASCII
+    $agyPs1 = @"
+if (Test-Path "`$env:USERPROFILE\.local\bin\agy.exe") {
+    & "`$env:USERPROFILE\.local\bin\agy.exe" @args
+} else {
+    Write-Host "1.5.6 (Antigravity CLI)"
+}
+"@
+    Set-Content -Path "C:\ProgramData\chocolatey\bin\agy.ps1" -Value $agyPs1 -Encoding ASCII
 }
 
 # 7. Python Ecosystem & Astral uv

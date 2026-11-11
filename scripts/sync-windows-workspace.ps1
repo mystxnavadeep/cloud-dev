@@ -62,7 +62,7 @@ function Invoke-WorkspaceSync {
         }
         $manifestData | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding UTF8
 
-        # Create filter file
+        # Create filter file without UTF-8 BOM
         $filterFile = "$env:TEMP\rclone-windows-sync-filters.txt"
         $filters = @"
 - node_modules/**
@@ -87,7 +87,7 @@ function Invoke-WorkspaceSync {
 - rclone.conf
 + *
 "@
-        Set-Content -Path $filterFile -Value $filters -Encoding UTF8
+        [System.IO.File]::WriteAllText($filterFile, $filters)
 
         $timestamp = (Get-Date -Format "yyyyMMdd-HHmmss")
         $backupDirArg = @()

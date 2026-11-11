@@ -178,7 +178,7 @@ if ($rcloneConfContent) {
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "✅ Google Drive connection successful."
                     
-                    # Create filter file for safe sync
+                    # Create filter file for safe sync without BOM
                     $filterFile = "$env:TEMP\rclone-windows-filters.txt"
                     $filters = @"
 - node_modules/**
@@ -196,7 +196,7 @@ if ($rcloneConfContent) {
 - AppData/Local/Temp/**
 + *
 "@
-                    Set-Content -Path $filterFile -Value $filters -Encoding UTF8
+                    [System.IO.File]::WriteAllText($filterFile, $filters)
 
                     Write-Host "Restoring files to $WorkspaceDir..."
                     & rclone copy "gdrive:$RemoteSubdir" $WorkspaceDir `

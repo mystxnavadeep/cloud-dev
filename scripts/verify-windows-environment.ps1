@@ -13,6 +13,11 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+# Refresh Process PATH from Machine and User environments
+$machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+$env:PATH = "$machinePath;$userPath;C:\ProgramData\chocolatey\bin;$env:USERPROFILE\.bun\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\AppData\Roaming\npm;$env:PATH"
+
 Write-Host "=================================================="
 Write-Host "🧪 Running Rigorous Verification of Windows Studio"
 Write-Host "=================================================="
@@ -122,6 +127,8 @@ Write-Host "`n=================================================="
 if ($script:failedCount -eq 0) {
     Write-Host "🎉 ALL VERIFICATION CHECKS PASSED (0 Failures)" -ForegroundColor Green
 } else {
-    Write-Host "⚠️ VERIFICATION COMPLETED WITH $($script:failedCount) FAILURE(S)" -ForegroundColor Yellow
+    Write-Host "❌ VERIFICATION COMPLETED WITH $($script:failedCount) FAILURE(S)" -ForegroundColor Red
+    Write-Error "Verification failed with $($script:failedCount) missing component(s)."
+    exit 1
 }
 Write-Host "=================================================="
