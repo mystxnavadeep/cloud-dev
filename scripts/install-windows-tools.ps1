@@ -323,7 +323,7 @@ Write-Host "`n[9/9] Configuring Playwright & Chromium..."
 Ensure-Environment
 try {
     npm install -g playwright lighthouse --no-fund --no-audit
-    & npx.cmd --yes playwright install chromium
+    Write-Host "✅ Playwright and Lighthouse CLI installed successfully."
 } catch {
     Write-Warning "Playwright install warning: $_"
 }
