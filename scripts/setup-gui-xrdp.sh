@@ -13,9 +13,16 @@ echo "🖥️  Installing & Configuring Ubuntu GUI (XFCE) + XRDP + SSH"
 echo "=================================================="
 
 # 1. Install lightweight XFCE, XRDP, and OpenSSH Server
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
+sudo apt-get remove --purge -y needrestart 2>/dev/null || true
+sudo rm -rf /etc/needrestart 2>/dev/null || true
+
 sudo apt-get update -qq -o Acquire::http::Timeout="15" -o Acquire::Retries="3"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     -o Acquire::http::Timeout="15" -o Acquire::Retries="3" \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
     --no-install-recommends \
     xfce4 \
     xfce4-terminal \
@@ -95,10 +102,20 @@ EOF
 # Ensure SSH host keys exist
 sudo ssh-keygen -A 2>/dev/null || true
 
-# 6. Start / Restart Services
+# 6. Start / Restart Services (socket-activation safe)
 echo "Starting OpenSSH and XRDP services..."
-sudo service ssh restart || sudo systemctl restart ssh || true
-sudo service xrdp restart || sudo systemctl restart xrdp || true
+sudo mkdir -p /run/sshd /var/run/sshd
+sudo sshd -t 2>/dev/null || true
+sudo systemctl daemon-reload 2>/dev/null || true
+
+timeout 5s sudo systemctl restart ssh.socket 2>/dev/null || \
+timeout 5s sudo systemctl restart ssh 2>/dev/null || \
+timeout 5s sudo service ssh restart 2>/dev/null || \
+sudo /usr/sbin/sshd 2>/dev/null || true
+
+timeout 5s sudo systemctl restart xrdp 2>/dev/null || \
+timeout 5s sudo service xrdp restart 2>/dev/null || \
+(sudo xrdp-sesman 2>/dev/null; sudo xrdp 2>/dev/null) || true
 
 # 7. Verify listening ports
 sleep 2
