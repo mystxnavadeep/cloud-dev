@@ -47,10 +47,12 @@ perform_sync() {
 
     # 3. Safety Check: Never overwrite remote with an unexpectedly empty workspace
     local local_files
-    local_files=$(find "${WORKSPACE_DIR}" -type f 2>/dev/null | wc -l || echo 0)
+    local_files=$( (sudo find "${WORKSPACE_DIR}" -type f 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
+    local_files="${local_files:-0}"
     if [ "${local_files}" -eq 0 ]; then
         local remote_files
-        remote_files=$(rclone lsf "${REMOTE_WORKSPACE_PATH}" --recursive --files-only 2>/dev/null | wc -l || echo 0)
+        remote_files=$( (rclone lsf "${REMOTE_WORKSPACE_PATH}" --recursive --files-only 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
+        remote_files="${remote_files:-0}"
         if [ "${remote_files}" -gt 0 ]; then
             echo "[$timestamp] ❌ Refusing to sync empty local workspace over non-empty remote backup (${remote_files} files). Aborting sync." >&2
             flock -u 200 || true

@@ -27,15 +27,13 @@ echo "=================================================="
 echo "Checking remote: ${REMOTE_PATH}"
 
 # Check remote directory existence and size
-SIZE_OUTPUT=$(rclone size "${REMOTE_PATH}" --json 2>/dev/null || true)
+SIZE_OUTPUT=$(rclone size "${REMOTE_PATH}" --json 2>/dev/null || echo '{}')
 
-if [ -z "${SIZE_OUTPUT}" ]; then
-    echo "⚠️ Notice: Remote path ${REMOTE_PATH} is currently empty or unindexed."
-    TOTAL_OBJECTS=0
-    TOTAL_BYTES=0
-else
-    TOTAL_OBJECTS=$(echo "${SIZE_OUTPUT}" | jq -r '.count // 0')
-    TOTAL_BYTES=$(echo "${SIZE_OUTPUT}" | jq -r '.bytes // 0')
+TOTAL_OBJECTS=$(echo "${SIZE_OUTPUT}" | jq -r '.count // 0' 2>/dev/null || echo 0)
+TOTAL_BYTES=$(echo "${SIZE_OUTPUT}" | jq -r '.bytes // 0' 2>/dev/null || echo 0)
+
+if [ "${TOTAL_OBJECTS}" -eq 0 ]; then
+    echo "⚠️ Notice: Remote path ${REMOTE_PATH} has 0 indexed files or is currently empty."
 fi
 
 # Format bytes to human readable form

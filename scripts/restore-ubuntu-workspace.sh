@@ -65,7 +65,8 @@ sudo mkdir -p "${WORKSPACE_DIR}"
 REMOTE_WORKSPACE_PATH="${REMOTE_PATH}/workspace"
 REMOTE_CONFIG_PATH="${REMOTE_PATH}/config"
 
-REMOTE_FILE_COUNT=$(rclone lsf "${REMOTE_WORKSPACE_PATH}" --recursive --files-only 2>/dev/null | wc -l || echo 0)
+REMOTE_FILE_COUNT=$( (rclone lsf "${REMOTE_WORKSPACE_PATH}" --recursive --files-only 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
+REMOTE_FILE_COUNT="${REMOTE_FILE_COUNT:-0}"
 
 if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
     echo "📦 Found existing workspace backup (${REMOTE_FILE_COUNT} files). Restoring to '${WORKSPACE_DIR}'..."
@@ -80,7 +81,8 @@ if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
         --stats 5s
 
     # Restore safe user configuration if present
-    CONFIG_COUNT=$(rclone lsf "${REMOTE_CONFIG_PATH}" --recursive --files-only 2>/dev/null | wc -l || echo 0)
+    CONFIG_COUNT=$( (rclone lsf "${REMOTE_CONFIG_PATH}" --recursive --files-only 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
+    CONFIG_COUNT="${CONFIG_COUNT:-0}"
     if [ "${CONFIG_COUNT}" -gt 0 ]; then
         echo "🔧 Restoring safe user configurations from '${REMOTE_CONFIG_PATH}'..."
         sudo rclone copy "${REMOTE_CONFIG_PATH}" "/home/${TARGET_USER}" \
@@ -89,7 +91,8 @@ if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
             --retries 3 || true
     fi
 
-    LOCAL_FILE_COUNT=$(find "${WORKSPACE_DIR}" -type f 2>/dev/null | wc -l || echo 0)
+    LOCAL_FILE_COUNT=$( (sudo find "${WORKSPACE_DIR}" -type f 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
+    LOCAL_FILE_COUNT="${LOCAL_FILE_COUNT:-0}"
     echo "✅ Workspace restored successfully (${LOCAL_FILE_COUNT} local files present)."
     echo "${LOCAL_FILE_COUNT}" > /tmp/.ubuntu_workspace_restored
 
