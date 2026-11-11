@@ -48,6 +48,7 @@ DNS_NAME="${TAILSCALE_HOSTNAME:-ubuntu-dev}"
 
 # 2. Configure Cloud Credentials & Global Toolchains
 sudo chmod -R a+rX /opt/hostedtoolcache 2>/dev/null || true
+sudo chmod 755 /home/runner 2>/dev/null || true
 for N_DIR in /opt/hostedtoolcache/node/*/x64/bin; do
     [ -d "${N_DIR}" ] && sudo ln -sf "${N_DIR}"/* /usr/local/bin/ 2>/dev/null || true
 done
@@ -56,10 +57,30 @@ for P_DIR in /opt/hostedtoolcache/Python/*/x64/bin; do
 done
 
 # Ensure Bun is in /usr/local/bin
-for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun"; do
+sudo rm -f /usr/local/bin/bun
+for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun" "/root/.bun/bin/bun"; do
     if [ -f "${BUN_PATH}" ]; then
         sudo cp -f "${BUN_PATH}" /usr/local/bin/bun || true
         sudo chmod 755 /usr/local/bin/bun || true
+        sudo chown root:root /usr/local/bin/bun || true
+        break
+    fi
+done
+
+# Ensure uv & uvx are in /usr/local/bin
+for UV_PATH in /usr/local/bin/uv "${HOME}/.local/bin/uv" "/home/runner/.local/bin/uv" "${HOME}/.cargo/bin/uv"; do
+    if [ -f "${UV_PATH}" ] && [ ! -x /usr/local/bin/uv ]; then
+        sudo cp -f "${UV_PATH}" /usr/local/bin/uv || true
+        sudo chmod 755 /usr/local/bin/uv || true
+        sudo chown root:root /usr/local/bin/uv || true
+        break
+    fi
+done
+for UVX_PATH in /usr/local/bin/uvx "${HOME}/.local/bin/uvx" "/home/runner/.local/bin/uvx" "${HOME}/.cargo/bin/uvx"; do
+    if [ -f "${UVX_PATH}" ] && [ ! -x /usr/local/bin/uvx ]; then
+        sudo cp -f "${UVX_PATH}" /usr/local/bin/uvx || true
+        sudo chmod 755 /usr/local/bin/uvx || true
+        sudo chown root:root /usr/local/bin/uvx || true
         break
     fi
 done

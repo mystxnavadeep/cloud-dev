@@ -72,15 +72,26 @@ fi
 echo "Configuring Node.js ecosystem (pnpm, yarn, Bun, Corepack)..."
 npm install -g pnpm yarn corepack
 
-if ! command -v bun &>/dev/null; then
+# Pre-activate pnpm and yarn through corepack to prevent download delays
+corepack enable 2>/dev/null || true
+corepack prepare pnpm@latest --activate 2>/dev/null || true
+corepack prepare yarn@stable --activate 2>/dev/null || true
+
+if ! command -v bun &>/dev/null || [ ! -x /usr/local/bin/bun ]; then
     echo "Installing Bun runtime..."
-    curl -fsSL https://bun.sh/install | bash
+    curl -fsSL https://bun.sh/install | bash || true
     export BUN_INSTALL="${HOME}/.bun"
     export PATH="${BUN_INSTALL}/bin:${PATH}"
-    # Make bun globally available in /usr/local/bin
-    if [ -f "${HOME}/.bun/bin/bun" ]; then
-        sudo ln -sf "${HOME}/.bun/bin/bun" /usr/local/bin/bun || true
-    fi
+    # Make bun globally available as real binary in /usr/local/bin
+    sudo rm -f /usr/local/bin/bun
+    for B_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun" "/root/.bun/bin/bun"; do
+        if [ -f "${B_PATH}" ]; then
+            sudo cp -f "${B_PATH}" /usr/local/bin/bun
+            sudo chmod 755 /usr/local/bin/bun
+            sudo chown root:root /usr/local/bin/bun
+            break
+        fi
+    done
 fi
 
 # 3. Web Framework CLIs, Compilers, Linters & Utilities
@@ -152,10 +163,36 @@ fi
 
 # 9. Python Web Frameworks & Utilities (uv, FastAPI, Flask, Django, Jupyter)
 echo "Configuring Python ecosystem (uv, FastAPI, Flask, Django, Jupyter)..."
-if ! command -v uv &>/dev/null; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    if [ -f "${HOME}/.cargo/bin/uv" ]; then
-        sudo ln -sf "${HOME}/.cargo/bin/uv" /usr/local/bin/uv || true
+if ! command -v uv &>/dev/null || [ ! -x /usr/local/bin/uv ]; then
+    echo "Installing Astral uv & uvx..."
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh || true
+    
+    # Ensure uv binary is in /usr/local/bin with proper permissions
+    sudo rm -f /usr/local/bin/uv /usr/local/bin/uvx
+    for UV_CANDIDATE in /usr/local/bin/uv "${HOME}/.local/bin/uv" "/home/runner/.local/bin/uv" "${HOME}/.cargo/bin/uv" "/root/.local/bin/uv"; do
+        if [ -f "${UV_CANDIDATE}" ]; then
+            sudo cp -f "${UV_CANDIDATE}" /usr/local/bin/uv
+            sudo chmod 755 /usr/local/bin/uv
+            sudo chown root:root /usr/local/bin/uv
+            break
+        fi
+    done
+    for UVX_CANDIDATE in /usr/local/bin/uvx "${HOME}/.local/bin/uvx" "/home/runner/.local/bin/uvx" "${HOME}/.cargo/bin/uvx" "/root/.local/bin/uvx"; do
+        if [ -f "${UVX_CANDIDATE}" ]; then
+            sudo cp -f "${UVX_CANDIDATE}" /usr/local/bin/uvx
+            sudo chmod 755 /usr/local/bin/uvx
+            sudo chown root:root /usr/local/bin/uvx
+            break
+        fi
+    done
+fi
+
+# Fallback: install uv via pip to guarantee availability
+if [ ! -x /usr/local/bin/uv ]; then
+    pip install --no-cache-dir uv || true
+    if command -v uv &>/dev/null; then
+        sudo cp -f "$(command -v uv)" /usr/local/bin/uv
+        sudo chmod 755 /usr/local/bin/uv
     fi
 fi
 
@@ -194,6 +231,7 @@ fi
 # 11. Expose all hosted toolchains & binaries globally to /usr/local/bin for all users (SSH, XRDP, tmux, nava)
 echo "Exposing hosted toolchains and binaries globally to /usr/local/bin..."
 sudo chmod -R a+rX /opt/hostedtoolcache 2>/dev/null || true
+sudo chmod 755 /home/runner 2>/dev/null || true
 
 # Symlink all Node and global npm tools (node, npm, npx, pnpm, yarn, corepack, wrangler, vercel, opencode, dsh, etc.)
 for N_DIR in /opt/hostedtoolcache/node/*/x64/bin; do
@@ -210,10 +248,30 @@ for P_DIR in /opt/hostedtoolcache/Python/*/x64/bin; do
 done
 
 # Ensure Bun is available globally
-for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun"; do
+sudo rm -f /usr/local/bin/bun
+for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun" "/root/.bun/bin/bun"; do
     if [ -f "${BUN_PATH}" ]; then
         sudo cp -f "${BUN_PATH}" /usr/local/bin/bun || true
         sudo chmod 755 /usr/local/bin/bun || true
+        sudo chown root:root /usr/local/bin/bun || true
+        break
+    fi
+done
+
+# Ensure uv and uvx are available globally
+for UV_PATH in /usr/local/bin/uv "${HOME}/.local/bin/uv" "/home/runner/.local/bin/uv" "${HOME}/.cargo/bin/uv"; do
+    if [ -f "${UV_PATH}" ] && [ ! -x /usr/local/bin/uv ]; then
+        sudo cp -f "${UV_PATH}" /usr/local/bin/uv || true
+        sudo chmod 755 /usr/local/bin/uv || true
+        sudo chown root:root /usr/local/bin/uv || true
+        break
+    fi
+done
+for UVX_PATH in /usr/local/bin/uvx "${HOME}/.local/bin/uvx" "/home/runner/.local/bin/uvx" "${HOME}/.cargo/bin/uvx"; do
+    if [ -f "${UVX_PATH}" ] && [ ! -x /usr/local/bin/uvx ]; then
+        sudo cp -f "${UVX_PATH}" /usr/local/bin/uvx || true
+        sudo chmod 755 /usr/local/bin/uvx || true
+        sudo chown root:root /usr/local/bin/uvx || true
         break
     fi
 done
