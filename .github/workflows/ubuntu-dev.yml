@@ -32,7 +32,6 @@ jobs:
       SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
       DEBIAN_FRONTEND: noninteractive
-      NEEDRESTART_MODE: a
       APT_LISTCHANGES_FRONTEND: none
 
     steps:
@@ -54,11 +53,11 @@ jobs:
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
           echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
-          sudo mkdir -p /etc/needrestart/conf.d 2>/dev/null || true
-          echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/autorestart.conf >/dev/null 2>&1 || true
           sudo systemctl stop unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
           sudo killall apt apt-get dpkg unattended-upgrade 2>/dev/null || true
           sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+          sudo apt-get remove --purge -y needrestart 2>/dev/null || true
+          sudo rm -rf /etc/needrestart 2>/dev/null || true
           sudo dpkg --configure -a 2>/dev/null || true
 
       - name: Set Script Permissions
