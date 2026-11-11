@@ -28,11 +28,15 @@ $extraPaths = @(
     "$env:USERPROFILE\.cargo\bin",
     "$env:USERPROFILE\.local\bin",
     "C:\Users\runneradmin\AppData\Local\agy\bin",
-    "C:\Users\runneradmin\.local\bin"
+    "C:\Users\runneradmin\.local\bin",
+    "C:\tools\php84",
+    "C:\tools\php83",
+    "C:\tools\php82",
+    "C:\ProgramData\ComposerSetup\bin"
 )
-Get-ChildItem "C:\hostedtoolcache\windows\node" -Recurse -Filter "node.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
-Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "python.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
-Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "pip.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+Resolve-Path "C:\hostedtoolcache\windows\node\*\x64" 2>$null | ForEach-Object { $extraPaths += $_.Path }
+Resolve-Path "C:\hostedtoolcache\windows\Python\*\x64" 2>$null | ForEach-Object { $extraPaths += $_.Path }
+Resolve-Path "C:\hostedtoolcache\windows\Python\*\x64\Scripts" 2>$null | ForEach-Object { $extraPaths += $_.Path }
 
 foreach ($ep in $extraPaths) {
     if ($ep -and (Test-Path $ep) -and (-not ($env:PATH -split ';' -contains $ep))) {

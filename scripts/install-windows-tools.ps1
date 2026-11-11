@@ -36,12 +36,15 @@ function Ensure-Environment {
         "$env:USERPROFILE\.bun\bin",
         "$env:USERPROFILE\.cargo\bin",
         "$env:USERPROFILE\.local\bin",
-        "C:\Users\runneradmin\AppData\Local\agy\bin"
+        "C:\Users\runneradmin\AppData\Local\agy\bin",
+        "C:\tools\php84",
+        "C:\tools\php83",
+        "C:\tools\php82"
     )
 
-    Get-ChildItem "C:\hostedtoolcache\windows\node" -Recurse -Filter "node.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
-    Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "python.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
-    Get-ChildItem "C:\hostedtoolcache\windows\Python" -Recurse -Filter "pip.exe" 2>$null | ForEach-Object { $extraPaths += $_.DirectoryName }
+    Resolve-Path "C:\hostedtoolcache\windows\node\*\x64" 2>$null | ForEach-Object { $extraPaths += $_.Path }
+    Resolve-Path "C:\hostedtoolcache\windows\Python\*\x64" 2>$null | ForEach-Object { $extraPaths += $_.Path }
+    Resolve-Path "C:\hostedtoolcache\windows\Python\*\x64\Scripts" 2>$null | ForEach-Object { $extraPaths += $_.Path }
 
     foreach ($ep in $extraPaths) {
         if ($ep -and (Test-Path $ep) -and (-not ($env:PATH -split ';' -contains $ep))) {
@@ -293,9 +296,26 @@ Ensure-Environment
 try {
     if (-not (Get-Command php -ErrorAction SilentlyContinue)) {
         choco install php -y --no-progress
+        foreach ($phpDir in @("C:\tools\php84", "C:\tools\php83", "C:\tools\php82", "C:\ProgramData\chocolatey\lib\php\tools")) {
+            if (Test-Path $phpDir) {
+                Add-ToPath $phpDir
+                break
+            }
+        }
     }
     if (-not (Get-Command composer -ErrorAction SilentlyContinue)) {
-        choco install composer -y --no-progress
+        $composerDir = "C:\ProgramData\ComposerSetup\bin"
+        if (-not (Test-Path $composerDir)) { New-Item -ItemType Directory -Path $composerDir -Force | Out-Null }
+        Invoke-WebRequest -Uri "https://getcomposer.org/composer.phar" -OutFile "$composerDir\composer.phar"
+        $composerBat = @"
+@echo off
+php "%~dp0composer.phar" %*
+"@
+        Set-Content -Path "$composerDir\composer.bat" -Value $composerBat -Encoding ASCII
+        Add-ToPath $composerDir
+        Copy-Item "$composerDir\composer.bat" "C:\ProgramData\chocolatey\bin\composer.bat" -Force -ErrorAction SilentlyContinue
+        Copy-Item "$composerDir\composer.phar" "C:\ProgramData\chocolatey\bin\composer.phar" -Force -ErrorAction SilentlyContinue
+        Write-Host "✅ Composer installed successfully via official composer.phar."
     }
 } catch {
     Write-Warning "PHP/Composer install warning: $_"
@@ -306,7 +326,7 @@ Write-Host "`n[9/9] Configuring Playwright & Chromium..."
 Ensure-Environment
 try {
     npm install -g --force playwright lighthouse --no-fund --no-audit
-    npx playwright install chromium
+    & npx --yes playwright install chromium
 } catch {
     Write-Warning "Playwright install warning: $_"
 }
