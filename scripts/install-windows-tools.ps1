@@ -323,13 +323,7 @@ Write-Host "`n[9/9] Configuring Playwright & Chromium..."
 Ensure-Environment
 try {
     npm install -g playwright lighthouse --no-fund --no-audit
-    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes playwright install chromium" -NoNewWindow -PassThru -ErrorAction SilentlyContinue
-    if ($proc) {
-        if (-not $proc.WaitForExit(60000)) {
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            Write-Warning "Playwright install timed out after 60s, continuing..."
-        }
-    }
+    & npx.cmd --yes playwright install chromium
 } catch {
     Write-Warning "Playwright install warning: $_"
 }
