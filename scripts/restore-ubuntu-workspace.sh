@@ -91,6 +91,39 @@ if [ "${REMOTE_FILE_COUNT}" -gt 0 ]; then
             --retries 3 || true
     fi
 
+    # Re-ensure Studio aliases and PATH in restored .bashrc
+    BASHRC="/home/${TARGET_USER}/.bashrc"
+    if [ -f "${BASHRC}" ] && ! grep -q "# Ubuntu Cloud Web Development Studio Aliases" "${BASHRC}" 2>/dev/null; then
+        sudo tee -a "${BASHRC}" >/dev/null << 'EOF'
+
+# ==============================================================================
+# Ubuntu Cloud Web Development Studio Aliases & Environment
+# ==============================================================================
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:${HOME}/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.bun/bin:${PATH}"
+export WORKSPACE="${HOME}/workspace"
+export DSH_HOME="${HOME}/workspace/.dsh"
+export DSH_AGENTS_HOME="${HOME}/workspace/.agents"
+
+# Three Permanent Tmux Session Aliases
+alias t1='tmux attach -t terminal-1 2>/dev/null || tmux new-session -s terminal-1 -c ~/workspace'
+alias t2='tmux attach -t terminal-2 2>/dev/null || tmux new-session -s terminal-2 -c ~/workspace'
+alias t3='tmux attach -t terminal-3 2>/dev/null || tmux new-session -s terminal-3 -c ~/workspace'
+alias tls='tmux list-sessions'
+
+# AI Coding Assistant Aliases
+alias oc='opencode'
+alias agy='agy'
+alias dsh='dsh'
+
+# Web Preview & Dev Utilities
+alias preview='preview'
+alias ws='cd ~/workspace'
+alias projects='cd ~/workspace/projects'
+alias web='cd ~/workspace/web'
+alias ll='ls -la'
+EOF
+    fi
+
     LOCAL_FILE_COUNT=$( (sudo find "${WORKSPACE_DIR}" -type f 2>/dev/null || true) | wc -l | tr -d '[:space:]' )
     LOCAL_FILE_COUNT="${LOCAL_FILE_COUNT:-0}"
     echo "✅ Workspace restored successfully (${LOCAL_FILE_COUNT} local files present)."

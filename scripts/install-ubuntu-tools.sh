@@ -131,11 +131,11 @@ fi
 
 # 7. Coding Agent 3: Antigravity CLI (agy)
 echo "Installing Google Antigravity CLI (agy)..."
-curl -fsSL https://antigravity.google/cli/install.sh | bash || true
-# Ensure agy is accessible globally in /usr/local/bin
-for CANDIDATE in "${HOME}/.local/bin/agy" "/root/.local/bin/agy" "/usr/local/bin/agy"; do
-    if [ -f "${CANDIDATE}" ]; then
-        sudo ln -sf "${CANDIDATE}" /usr/local/bin/agy || true
+curl -fsSL https://antigravity.google/cli/install.sh | sudo bash -s -- -d /usr/local/bin || true
+for CANDIDATE in "${HOME}/.local/bin/agy" "/root/.local/bin/agy" "/home/runner/.local/bin/agy"; do
+    if [ -f "${CANDIDATE}" ] && [ ! -f "/usr/local/bin/agy" ]; then
+        sudo cp -f "${CANDIDATE}" /usr/local/bin/agy || true
+        sudo chmod 755 /usr/local/bin/agy || true
         break
     fi
 done
@@ -189,6 +189,40 @@ if [ -f "${SCRIPT_DIR}/preview-cli.sh" ]; then
 fi
 if [ -f "${SCRIPT_DIR}/preview-tunnel.sh" ]; then
     sudo ln -sf "${SCRIPT_DIR}/preview-tunnel.sh" /usr/local/bin/preview-tunnel || true
+fi
+
+# 11. Expose all hosted toolchains & binaries globally to /usr/local/bin for all users (SSH, XRDP, tmux, nava)
+echo "Exposing hosted toolchains and binaries globally to /usr/local/bin..."
+sudo chmod -R a+rX /opt/hostedtoolcache 2>/dev/null || true
+
+# Symlink all Node and global npm tools (node, npm, npx, pnpm, yarn, corepack, wrangler, vercel, opencode, dsh, etc.)
+for N_DIR in /opt/hostedtoolcache/node/*/x64/bin; do
+    if [ -d "${N_DIR}" ]; then
+        sudo ln -sf "${N_DIR}"/* /usr/local/bin/ 2>/dev/null || true
+    fi
+done
+
+# Symlink all Python tools
+for P_DIR in /opt/hostedtoolcache/Python/*/x64/bin; do
+    if [ -d "${P_DIR}" ]; then
+        sudo ln -sf "${P_DIR}"/* /usr/local/bin/ 2>/dev/null || true
+    fi
+done
+
+# Ensure Bun is available globally
+for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun"; do
+    if [ -f "${BUN_PATH}" ]; then
+        sudo cp -f "${BUN_PATH}" /usr/local/bin/bun || true
+        sudo chmod 755 /usr/local/bin/bun || true
+        break
+    fi
+done
+
+# Ensure OpenCode alias 'oc' exists in /usr/local/bin
+if command -v opencode &>/dev/null; then
+    sudo ln -sf "$(command -v opencode)" /usr/local/bin/oc || true
+elif [ -f "/usr/local/bin/opencode" ]; then
+    sudo ln -sf /usr/local/bin/opencode /usr/local/bin/oc || true
 fi
 
 echo "=================================================="

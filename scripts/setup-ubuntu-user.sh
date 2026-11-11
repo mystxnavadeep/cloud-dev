@@ -63,7 +63,52 @@ sudo mkdir -p \
     "/home/${TARGET_USER}/.dsh" \
     "/home/${TARGET_USER}/.agents"
 
-# 6. Configure shell environment and convenient aliases
+# 6. Configure system-wide and user shell environment & convenient aliases
+sudo tee /etc/profile.d/99-cloud-dev.sh >/dev/null << 'EOF'
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:${HOME}/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.bun/bin"
+export WORKSPACE="${HOME}/workspace"
+export DSH_HOME="${HOME}/workspace/.dsh"
+export DSH_AGENTS_HOME="${HOME}/workspace/.agents"
+
+# Three Permanent Tmux Session Aliases
+alias t1='tmux attach -t terminal-1 2>/dev/null || tmux new-session -s terminal-1 -c ~/workspace'
+alias t2='tmux attach -t terminal-2 2>/dev/null || tmux new-session -s terminal-2 -c ~/workspace'
+alias t3='tmux attach -t terminal-3 2>/dev/null || tmux new-session -s terminal-3 -c ~/workspace'
+alias tls='tmux list-sessions'
+
+# AI Coding Assistant Aliases
+alias oc='opencode'
+alias agy='agy'
+alias dsh='dsh'
+
+# Web Preview & Dev Utilities
+alias preview='preview'
+alias ws='cd ~/workspace'
+alias projects='cd ~/workspace/projects'
+alias web='cd ~/workspace/web'
+alias ll='ls -la'
+EOF
+
+if ! grep -q "# Ubuntu Cloud Web Development Studio Aliases" /etc/bash.bashrc 2>/dev/null; then
+    sudo tee -a /etc/bash.bashrc >/dev/null << 'EOF'
+
+# ==============================================================================
+# Ubuntu Cloud Web Development Studio Aliases & Environment
+# ==============================================================================
+alias t1='tmux attach -t terminal-1 2>/dev/null || tmux new-session -s terminal-1 -c ~/workspace'
+alias t2='tmux attach -t terminal-2 2>/dev/null || tmux new-session -s terminal-2 -c ~/workspace'
+alias t3='tmux attach -t terminal-3 2>/dev/null || tmux new-session -s terminal-3 -c ~/workspace'
+alias tls='tmux list-sessions'
+alias oc='opencode'
+alias agy='agy'
+alias dsh='dsh'
+alias ws='cd ~/workspace'
+alias projects='cd ~/workspace/projects'
+alias web='cd ~/workspace/web'
+alias ll='ls -la'
+EOF
+fi
+
 BASHRC="/home/${TARGET_USER}/.bashrc"
 if [ ! -f "${BASHRC}" ]; then
     sudo cp /etc/skel/.bashrc "${BASHRC}" || true
@@ -76,7 +121,7 @@ if ! grep -q "# Ubuntu Cloud Web Development Studio Aliases" "${BASHRC}" 2>/dev/
 # ==============================================================================
 # Ubuntu Cloud Web Development Studio Aliases & Environment
 # ==============================================================================
-export PATH="${HOME}/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.bun/bin:/usr/local/bin:${PATH}"
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:${HOME}/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.bun/bin:${PATH}"
 export WORKSPACE="${HOME}/workspace"
 export DSH_HOME="${HOME}/workspace/.dsh"
 export DSH_AGENTS_HOME="${HOME}/workspace/.agents"
@@ -100,6 +145,28 @@ alias web='cd ~/workspace/web'
 alias ll='ls -la'
 EOF
 fi
+
+# Ensure .profile loads .bashrc and /etc/profile.d
+USER_PROFILE="/home/${TARGET_USER}/.profile"
+if [ ! -f "${USER_PROFILE}" ] || ! grep -q ".bashrc" "${USER_PROFILE}" 2>/dev/null; then
+    sudo tee "${USER_PROFILE}" >/dev/null << 'EOF'
+# ~/.profile: executed by the command interpreter for login shells.
+if [ -n "$BASH_VERSION" ]; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc"
+    fi
+fi
+if [ -d "/etc/profile.d" ]; then
+    for i in /etc/profile.d/*.sh; do
+        if [ -r "$i" ]; then
+            . "$i"
+        fi
+    done
+    unset i
+fi
+EOF
+fi
+sudo chown "${TARGET_USER}:${TARGET_USER}" "${USER_PROFILE}" 2>/dev/null || true
 
 # Configure tmux default configuration
 TMUX_CONF="/home/${TARGET_USER}/.tmux.conf"

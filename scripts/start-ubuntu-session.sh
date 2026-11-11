@@ -46,7 +46,16 @@ TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName 
 HOST_IP="${TAILSCALE_IP:-127.0.0.1}"
 DNS_NAME="${TAILSCALE_HOSTNAME:-ubuntu-dev}"
 
-# 2. Configure Cloud Credentials for User 'nava'
+# 2. Configure Cloud Credentials & Global Toolchains
+sudo chmod -R a+rX /opt/hostedtoolcache 2>/dev/null || true
+for N_DIR in /opt/hostedtoolcache/node/*/x64/bin; do
+    [ -d "${N_DIR}" ] && sudo ln -sf "${N_DIR}"/* /usr/local/bin/ 2>/dev/null || true
+done
+for P_DIR in /opt/hostedtoolcache/Python/*/x64/bin; do
+    [ -d "${P_DIR}" ] && sudo ln -sf "${P_DIR}"/* /usr/local/bin/ 2>/dev/null || true
+done
+[ -f "/usr/local/bin/opencode" ] && sudo ln -sf /usr/local/bin/opencode /usr/local/bin/oc 2>/dev/null || true
+
 if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ "${CLOUDFLARE_API_TOKEN}" != "add" ]; then
     sudo -u "${TARGET_USER}" mkdir -p "/home/${TARGET_USER}/.wrangler/config"
     sudo tee -a "/home/${TARGET_USER}/.bashrc" >/dev/null << EOF
