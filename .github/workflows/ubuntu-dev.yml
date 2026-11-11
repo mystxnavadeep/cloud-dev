@@ -118,6 +118,10 @@ jobs:
           nohup ./scripts/sync-ubuntu-workspace.sh --daemon 300 > /tmp/ubuntu-sync-daemon.log 2>&1 &
           echo "Background sync daemon active."
 
+      - name: Verify Ubuntu Runtime Environment & CLI Tools
+        run: |
+          ./scripts/verify-ubuntu-environment.sh
+
       - name: Launch Ubuntu Web Development Studio Session
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

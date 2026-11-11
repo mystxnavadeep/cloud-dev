@@ -24,44 +24,80 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     -o Acquire::http::Timeout="15" -o Acquire::Retries="5" \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
-    --no-install-recommends \
     xfce4-session \
+    xfconf \
     xfwm4 \
     xfdesktop4 \
     xfce4-panel \
     xfce4-settings \
     xfce4-terminal \
+    xfce4-appfinder \
     thunar \
+    xinit \
     xorgxrdp \
     xrdp \
     dbus-x11 \
+    dbus-user-session \
     x11-xserver-utils \
     openssh-server \
     polkitd
 
-# 2. Add xrdp user to ssl-cert group
+# 2. Add users to ssl-cert group
 sudo adduser xrdp ssl-cert 2>/dev/null || true
+sudo adduser "${TARGET_USER}" ssl-cert 2>/dev/null || true
 
-# 3. Configure XRDP window manager session startup (prevent black screen)
-echo "Configuring XRDP session startup to prevent black screen issues..."
+# 3. Configure XRDP window manager session startup (prevent failsafe & black screen issues)
+echo "Configuring XRDP session startup with D-Bus support..."
 
-# 3a. User-level session file (.xsession)
+# 3a. User-level session files (.xsession & .xsessionrc)
 XSESSION_FILE="/home/${TARGET_USER}/.xsession"
 sudo tee "${XSESSION_FILE}" >/dev/null << 'EOF'
 #!/usr/bin/env bash
+export XDG_CURRENT_DESKTOP="XFCE"
+export XDG_MENU_PREFIX="xfce-"
+export XDG_CONFIG_DIRS="/etc/xdg"
+export XDG_DATA_DIRS="/usr/local/share:/usr/share"
 unset DBUS_SESSION_BUS_ADDRESS
 unset XDG_RUNTIME_DIR
-exec startxfce4
+exec dbus-launch --exit-with-session startxfce4
 EOF
 sudo chmod +x "${XSESSION_FILE}"
-sudo chown "${TARGET_USER}:${TARGET_USER}" "${XSESSION_FILE}"
+sudo cp -p "${XSESSION_FILE}" "/home/${TARGET_USER}/.xsessionrc"
 
-# 3b. System-level XRDP startwm.sh patch
+# Create initial XFCE config directories and enforce strict user ownership
+sudo -u "${TARGET_USER}" mkdir -p "/home/${TARGET_USER}/.config/xfce4" "/home/${TARGET_USER}/.cache"
+sudo chown -R "${TARGET_USER}:${TARGET_USER}" "/home/${TARGET_USER}"
+
+# 3b. System-level XRDP startwm.sh configuration
 STARTWM="/etc/xrdp/startwm.sh"
-if [ -f "${STARTWM}" ]; then
-    if ! grep -q "unset DBUS_SESSION_BUS_ADDRESS" "${STARTWM}"; then
-        sudo sed -i '1a unset DBUS_SESSION_BUS_ADDRESS\nunset XDG_RUNTIME_DIR' "${STARTWM}"
-    fi
+sudo tee "${STARTWM}" >/dev/null << 'EOF'
+#!/usr/bin/env bash
+if [ -r /etc/profile ]; then
+    . /etc/profile
+fi
+if [ -r ~/.profile ]; then
+    . ~/.profile
+fi
+
+export XDG_CURRENT_DESKTOP="XFCE"
+export XDG_MENU_PREFIX="xfce-"
+export XDG_CONFIG_DIRS="/etc/xdg"
+export XDG_DATA_DIRS="/usr/local/share:/usr/share"
+unset DBUS_SESSION_BUS_ADDRESS
+unset XDG_RUNTIME_DIR
+
+if [ -f ~/.xsession ]; then
+    exec /bin/bash ~/.xsession
+fi
+
+exec dbus-launch --exit-with-session startxfce4
+EOF
+sudo chmod +x "${STARTWM}"
+
+# 3c. XRDP sesman config (keep sessions alive on disconnect)
+SESMAN_INI="/etc/xrdp/sesman.ini"
+if [ -f "${SESMAN_INI}" ]; then
+    sudo sed -i 's/^KillDisconnected=true/KillDisconnected=false/' "${SESMAN_INI}" 2>/dev/null || true
 fi
 
 # 3c. Xwrapper config (allow anybody to run X)
@@ -136,6 +172,26 @@ if ss -tln | grep -q ":3389 "; then
     echo "✅ XRDP Server is listening on port 3389."
 else
     echo "⚠️ Warning: XRDP Server may not be listening on port 3389."
+fi
+
+# 8. Verify XFCE desktop & D-Bus components
+echo "Verifying XFCE desktop & D-Bus components..."
+if command -v xfce4-session &>/dev/null; then
+    echo "✅ xfce4-session available: $(command -v xfce4-session)"
+else
+    echo "❌ Error: xfce4-session is not found!" >&2
+    exit 1
+fi
+
+if command -v dbus-launch &>/dev/null; then
+    echo "✅ dbus-launch available: $(command -v dbus-launch)"
+else
+    echo "❌ Error: dbus-launch is not found!" >&2
+    exit 1
+fi
+
+if command -v xfconf-query &>/dev/null; then
+    echo "✅ xfconf-query available: $(command -v xfconf-query)"
 fi
 
 echo "=================================================="

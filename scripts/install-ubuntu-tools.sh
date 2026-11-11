@@ -225,6 +225,59 @@ elif [ -f "/usr/local/bin/opencode" ]; then
     sudo ln -sf /usr/local/bin/opencode /usr/local/bin/oc || true
 fi
 
+# Ensure standalone 'oc' wrapper exists
+if [ ! -f "/usr/local/bin/oc" ] || [ ! -x "/usr/local/bin/oc" ]; then
+    sudo tee /usr/local/bin/oc >/dev/null << 'EOF'
+#!/usr/bin/env bash
+if command -v opencode >/dev/null 2>&1; then
+    exec opencode "$@"
+elif [ -x /usr/local/bin/opencode ]; then
+    exec /usr/local/bin/opencode "$@"
+else
+    echo "Error: opencode command not found" >&2
+    exit 1
+fi
+EOF
+    sudo chmod 755 /usr/local/bin/oc
+fi
+
+# 12. Create standalone wrapper scripts in /usr/local/bin for permanent Tmux terminals & navigation
+echo "Creating permanent terminal & alias wrappers in /usr/local/bin..."
+sudo tee /usr/local/bin/t1 >/dev/null << 'EOF'
+#!/usr/bin/env bash
+exec tmux attach-session -t terminal-1 2>/dev/null || exec tmux new-session -s terminal-1 -c "${HOME}/workspace"
+EOF
+
+sudo tee /usr/local/bin/t2 >/dev/null << 'EOF'
+#!/usr/bin/env bash
+exec tmux attach-session -t terminal-2 2>/dev/null || exec tmux new-session -s terminal-2 -c "${HOME}/workspace"
+EOF
+
+sudo tee /usr/local/bin/t3 >/dev/null << 'EOF'
+#!/usr/bin/env bash
+exec tmux attach-session -t terminal-3 2>/dev/null || exec tmux new-session -s terminal-3 -c "${HOME}/workspace"
+EOF
+
+sudo tee /usr/local/bin/tls >/dev/null << 'EOF'
+#!/usr/bin/env bash
+exec tmux list-sessions
+EOF
+
+sudo tee /usr/local/bin/ws >/dev/null << 'EOF'
+#!/usr/bin/env bash
+cd "${HOME}/workspace" && exec "${SHELL:-/bin/bash}"
+EOF
+
+sudo chmod 755 /usr/local/bin/t1 /usr/local/bin/t2 /usr/local/bin/t3 /usr/local/bin/tls /usr/local/bin/ws /usr/local/bin/agy 2>/dev/null || true
+
+# 13. Configure system-wide PATH in /etc/environment for SSH, XRDP, and systemd
+NODE_BIN_DIR="$(find /opt/hostedtoolcache/node -type d -name "bin" 2>/dev/null | sort -V | tail -n 1)"
+PYTHON_BIN_DIR="$(find /opt/hostedtoolcache/Python -type d -name "bin" 2>/dev/null | sort -V | tail -n 1)"
+sudo tee /etc/environment >/dev/null << EOF
+PATH="${NODE_BIN_DIR}:${PYTHON_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+WORKSPACE="/home/${TARGET_USER}/workspace"
+EOF
+
 echo "=================================================="
 echo "✅ Web Development Studio Tools Installation Complete"
 echo "=================================================="

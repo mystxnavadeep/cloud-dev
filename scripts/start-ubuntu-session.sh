@@ -54,11 +54,42 @@ done
 for P_DIR in /opt/hostedtoolcache/Python/*/x64/bin; do
     [ -d "${P_DIR}" ] && sudo ln -sf "${P_DIR}"/* /usr/local/bin/ 2>/dev/null || true
 done
+
+# Ensure Bun is in /usr/local/bin
+for BUN_PATH in "${HOME}/.bun/bin/bun" "/home/runner/.bun/bin/bun"; do
+    if [ -f "${BUN_PATH}" ]; then
+        sudo cp -f "${BUN_PATH}" /usr/local/bin/bun || true
+        sudo chmod 755 /usr/local/bin/bun || true
+        break
+    fi
+done
+
+# Ensure Antigravity CLI is in /usr/local/bin
+for AGY_PATH in "${HOME}/.local/bin/agy" "/root/.local/bin/agy" "/home/runner/.local/bin/agy"; do
+    if [ -f "${AGY_PATH}" ] && [ ! -f "/usr/local/bin/agy" ]; then
+        sudo cp -f "${AGY_PATH}" /usr/local/bin/agy || true
+        sudo chmod 755 /usr/local/bin/agy || true
+        break
+    fi
+done
+[ -f "/usr/local/bin/agy" ] && sudo chmod 755 /usr/local/bin/agy 2>/dev/null || true
+
+# Ensure OpenCode and 'oc' alias
 [ -f "/usr/local/bin/opencode" ] && sudo ln -sf /usr/local/bin/opencode /usr/local/bin/oc 2>/dev/null || true
+
+# Ensure terminal wrappers exist
+sudo chmod 755 /usr/local/bin/t1 /usr/local/bin/t2 /usr/local/bin/t3 /usr/local/bin/tls /usr/local/bin/ws /usr/local/bin/oc 2>/dev/null || true
+
+# Ensure user ownership of entire home directory
+sudo chown -R "${TARGET_USER}:${TARGET_USER}" "/home/${TARGET_USER}" 2>/dev/null || true
 
 if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ "${CLOUDFLARE_API_TOKEN}" != "add" ]; then
     sudo -u "${TARGET_USER}" mkdir -p "/home/${TARGET_USER}/.wrangler/config"
     sudo tee -a "/home/${TARGET_USER}/.bashrc" >/dev/null << EOF
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
+export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-}"
+EOF
+    sudo tee -a /etc/profile.d/99-cloud-dev.sh >/dev/null << EOF
 export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
 export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-}"
 EOF
@@ -70,10 +101,17 @@ if [ -n "${VERCEL_TOKEN:-}" ] && [ "${VERCEL_TOKEN}" != "add" ]; then
 export VERCEL_TOKEN="${VERCEL_TOKEN}"
 export VERCEL_ORG_ID="${VERCEL_ORG_ID:-}"
 EOF
+    sudo tee -a /etc/profile.d/99-cloud-dev.sh >/dev/null << EOF
+export VERCEL_TOKEN="${VERCEL_TOKEN}"
+export VERCEL_ORG_ID="${VERCEL_ORG_ID:-}"
+EOF
 fi
 
 if [ -n "${DEEPSEEK_API_KEY:-}" ] && [ "${DEEPSEEK_API_KEY}" != "add" ]; then
     sudo tee -a "/home/${TARGET_USER}/.bashrc" >/dev/null << EOF
+export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}"
+EOF
+    sudo tee -a /etc/profile.d/99-cloud-dev.sh >/dev/null << EOF
 export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}"
 EOF
 fi
