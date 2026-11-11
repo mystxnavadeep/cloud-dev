@@ -114,10 +114,20 @@ EOF
 # Ensure SSH host keys exist
 sudo ssh-keygen -A 2>/dev/null || true
 
-# 6. Start / Restart Services
+# 6. Start / Restart Services with timeout protection (Ubuntu 24.04 socket-activation safe)
 echo "Starting OpenSSH and XRDP services..."
-sudo service ssh restart || sudo systemctl restart ssh || true
-sudo service xrdp restart || sudo systemctl restart xrdp || true
+sudo mkdir -p /run/sshd /var/run/sshd
+sudo sshd -t 2>/dev/null || true
+sudo systemctl daemon-reload 2>/dev/null || true
+
+timeout 5s sudo systemctl restart ssh.socket 2>/dev/null || \
+timeout 5s sudo systemctl restart ssh 2>/dev/null || \
+timeout 5s sudo service ssh restart 2>/dev/null || \
+sudo /usr/sbin/sshd 2>/dev/null || true
+
+timeout 5s sudo systemctl restart xrdp 2>/dev/null || \
+timeout 5s sudo service xrdp restart 2>/dev/null || \
+(sudo xrdp-sesman 2>/dev/null; sudo xrdp 2>/dev/null) || true
 
 # 7. Verify listening ports
 sleep 2
