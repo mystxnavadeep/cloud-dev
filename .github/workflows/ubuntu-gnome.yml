@@ -1,0 +1,162 @@
+name: Ubuntu GNOME Cloud PC
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_duration_minutes:
+        description: 'Session duration in minutes (default: 340, max 345)'
+        required: false
+        default: '340'
+        type: string
+      force_clean_restore:
+        description: 'Initialize a clean workspace (ignore existing Google Drive backup)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ubuntu-gnome-session
+  cancel-in-progress: false
+
+jobs:
+  ubuntu-gnome:
+    name: Run Ubuntu GNOME Cloud PC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360 # Standard GitHub Actions job max duration (6 hours)
+
+    env:
+      TARGET_USER: nava
+      TARGET_PASS: nava
+      WORKSPACE_DIR: /home/nava/workspace
+      REMOTE_SUBDIR: cloud-dev/ubuntu-gnome-workspace
+      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '340' }}
+      FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Set Script Permissions
+        run: |
+          chmod +x scripts/*.sh
+
+      - name: Optimize Network, DNS & System Performance
+        run: |
+          ./scripts/optimize-ubuntu-system.sh
+
+      - name: Configure Linux User & Permanent Tmux Sessions
+        run: |
+          ./scripts/setup-ubuntu-user.sh
+
+      - name: Install & Configure GNOME Desktop, XRDP & OpenSSH
+        run: |
+          ./scripts/setup-gui-gnome.sh
+
+      - name: Install Web Development Toolkit & Coding Agents
+        run: |
+          ./scripts/install-ubuntu-tools.sh
+
+      - name: Authenticate Cloud Platform CLIs (GitHub, Cloudflare, Vercel)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          ./scripts/setup-cloud-auth.sh
+
+      - name: Check Tailscale Configuration
+        id: check_ts
+        env:
+          TS_KEY: ${{ secrets.TS_AUTHKEY || secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          if [ -n "${TS_KEY}" ] && [ "${TS_KEY}" != "add" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Connect to Tailscale Network
+        if: steps.check_ts.outputs.enabled == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY || secrets.TAILSCALE_AUTHKEY }}
+          args: --hostname=ubuntu-gnome --accept-routes --ssh
+
+      - name: Verify Tailscale Connection & Network Identity
+        if: steps.check_ts.outputs.enabled == 'true'
+        run: |
+          ./scripts/verify-tailscale.sh
+
+      - name: Restore Workspace & GNOME Configuration from Google Drive
+        env:
+          RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
+        run: |
+          if [ "${FORCE_CLEAN_RESTORE}" = "true" ]; then
+            echo "Force clean restore requested. Skipping remote backup download."
+            mkdir -p "${WORKSPACE_DIR}"
+            touch /tmp/.ubuntu_gnome_workspace_restored
+          else
+            ./scripts/restore-ubuntu-gnome.sh
+          fi
+
+      - name: Start 5-Minute Auto-Sync Daemon
+        run: |
+          echo "Starting 5-minute background Ubuntu GNOME workspace sync daemon..."
+          nohup ./scripts/sync-ubuntu-gnome.sh --daemon 300 > /tmp/ubuntu-gnome-sync-daemon.log 2>&1 &
+          echo "Background sync daemon active."
+
+      - name: Verify Ubuntu GNOME Runtime Environment & CLI Tools
+        run: |
+          ./scripts/verify-ubuntu-gnome.sh
+
+      - name: Launch Ubuntu GNOME Cloud PC Session
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          ./scripts/start-ubuntu-gnome-session.sh
+
+      - name: Stop Background Synchronization Safely
+        if: always()
+        run: |
+          ./scripts/sync-ubuntu-gnome.sh --stop-daemon
+
+      - name: Save Session Recovery State
+        if: always()
+        run: |
+          ./scripts/sync-ubuntu-gnome.sh --save-recovery-state
+
+      - name: Final Workspace & Configuration Backup to Google Drive
+        if: always()
+        run: |
+          echo "Executing final workspace & configuration synchronization..."
+          if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
+            ./scripts/sync-ubuntu-gnome.sh --final
+          else
+            echo "rclone configuration not found; skipping final backup."
+          fi
+
+      - name: Verify Workspace Backup Integrity
+        if: always()
+        run: |
+          if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
+            ./scripts/verify-backup.sh "cloud-dev/ubuntu-gnome-workspace"
+          else
+            echo "rclone configuration not found; skipping verification."
+          fi
