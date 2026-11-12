@@ -16,7 +16,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
 PORT="${DSH_PORT:-3080}"
-SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-350}"
+SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-340}"
+if [ "${SESSION_DURATION_MINUTES}" -gt 345 ]; then
+    echo "⚠️ Warning: Requested duration (${SESSION_DURATION_MINUTES}m) exceeds safe 6-hour runner limit. Capping at 345m."
+    SESSION_DURATION_MINUTES=345
+fi
 
 export DSH_HOME="${WORKSPACE_DIR}/.dsh"
 export DSH_AGENTS_HOME="${WORKSPACE_DIR}/.agents"
@@ -245,16 +249,25 @@ tail -n 20 -f "${DSH_LOG}" &
 TAIL_PID=$!
 
 SESSION_SECONDS=$((SESSION_DURATION_MINUTES * 60))
-echo "Session active for ${SESSION_DURATION_MINUTES} minutes (${SESSION_SECONDS}s)..."
+echo "Session active for ${SESSION_DURATION_MINUTES} minutes (${SESSION_SECONDS}s) — Safe 6-Hour Runner Budget..."
 
 START_TIME=$(date +%s)
+LAST_REPORT=0
 while true; do
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
 
     if [ "${ELAPSED}" -ge "${SESSION_SECONDS}" ]; then
-        echo "⏰ Session duration of ${SESSION_DURATION_MINUTES} minutes reached. Initiating shutdown..."
+        echo ""
+        echo "⏰ Session duration of ${SESSION_DURATION_MINUTES} minutes reached. Initiating clean graceful shutdown..."
         break
+    fi
+
+    # Report status every 5 minutes (300 seconds)
+    if [ $((CURRENT_TIME - LAST_REPORT)) -ge 300 ]; then
+        LAST_REPORT="${CURRENT_TIME}"
+        REMAINING=$(( (SESSION_SECONDS - ELAPSED) / 60 ))
+        echo "[$(date -u +"%Y-%m-%d %H:%M:%SZ")] DeepSeek Harness Active — Remaining: ${REMAINING}m — Access: ${FINAL_WEB_URL}"
     fi
 
     if ! kill -0 "${DSH_PID}" 2>/dev/null; then
@@ -266,4 +279,5 @@ while true; do
 done
 
 kill "${TAIL_PID}" 2>/dev/null || true
-echo "Session loop finished."
+echo "DeepSeek Harness session loop finished cleanly. Proceeding to safe shutdown."
+exit 0

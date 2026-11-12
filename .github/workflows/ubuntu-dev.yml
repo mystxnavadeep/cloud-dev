@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       session_duration_minutes:
-        description: 'Session duration in minutes (max 360)'
+        description: 'Session duration in minutes (default: 340, max 345)'
         required: false
-        default: '350'
+        default: '340'
         type: string
       force_clean_restore:
         description: 'Initialize a clean workspace (ignore existing Google Drive backup)'
@@ -22,14 +22,14 @@ jobs:
   ubuntu-studio:
     name: Run Ubuntu Cloud Web Development Studio
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: 360 # Standard GitHub Actions job max duration (6 hours)
 
     env:
       TARGET_USER: nava
       TARGET_PASS: nava
       WORKSPACE_DIR: /home/nava/workspace
       REMOTE_SUBDIR: cloud-dev/ubuntu-workspace
-      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
+      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '340' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
 
     steps:
@@ -132,6 +132,16 @@ jobs:
         run: |
           ./scripts/start-ubuntu-session.sh
 
+      - name: Stop Background Synchronization Safely
+        if: always()
+        run: |
+          ./scripts/sync-ubuntu-workspace.sh --stop-daemon
+
+      - name: Save Session Recovery State
+        if: always()
+        run: |
+          ./scripts/sync-ubuntu-workspace.sh --save-recovery-state
+
       - name: Final Workspace & Configuration Backup to Google Drive
         if: always()
         run: |
@@ -146,7 +156,7 @@ jobs:
         if: always()
         run: |
           if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
-            ./scripts/verify-backup.sh
+            ./scripts/verify-backup.sh "cloud-dev/ubuntu-workspace"
           else
             echo "rclone configuration not found; skipping verification."
           fi

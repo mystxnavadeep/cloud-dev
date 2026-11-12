@@ -8,7 +8,7 @@ set +x # Ensure secrets are never echoed in logs
 
 GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-/home/runner}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-${GITHUB_WORKSPACE}/workspace}"
-REMOTE_SUBDIR="${REMOTE_SUBDIR:-cloud-dev/workspace}"
+REMOTE_SUBDIR="${1:-${REMOTE_SUBDIR:-cloud-dev/workspace}}"
 
 # Detect remote
 REMOTE="gdrive:"
@@ -52,12 +52,21 @@ format_bytes() {
 
 HUMAN_SIZE=$(format_bytes "${TOTAL_BYTES}")
 
+# Check for manifest or recovery state
+MANIFEST_STATUS="⚠️ None detected"
+if rclone lsf "${REMOTE_PATH}" 2>/dev/null | grep -q "manifest.json"; then
+    MANIFEST_STATUS="✅ manifest.json verified"
+elif rclone lsf "${REMOTE_PATH}/workspace/backups" 2>/dev/null | grep -E -q "(manifest|recovery)"; then
+    MANIFEST_STATUS="✅ recovery metadata verified"
+fi
+
 echo "Remote Backup Verification Report:"
 echo "-----------------------------------"
-echo "Remote Path:   ${REMOTE_PATH}"
-echo "Total Files:   ${TOTAL_OBJECTS}"
-echo "Total Storage: ${HUMAN_SIZE} (${TOTAL_BYTES} bytes)"
-echo "Backup Status: VERIFIED"
+echo "Remote Path:     ${REMOTE_PATH}"
+echo "Total Files:     ${TOTAL_OBJECTS}"
+echo "Total Storage:   ${HUMAN_SIZE} (${TOTAL_BYTES} bytes)"
+echo "Recovery State:  ${MANIFEST_STATUS}"
+echo "Backup Status:   VERIFIED"
 echo "-----------------------------------"
 
 if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
@@ -68,8 +77,10 @@ if [ -n "${GITHUB_STEP_SUMMARY}" ]; then
         echo "| **Google Drive Remote** | \`${REMOTE_PATH}\` |"
         echo "| **Total Files Preserved** | \`${TOTAL_OBJECTS}\` |"
         echo "| **Total Backup Size** | \`${HUMAN_SIZE}\` |"
+        echo "| **Recovery Metadata** | ${MANIFEST_STATUS} |"
         echo "| **Verification Status** | ✅ **VERIFIED** |"
     } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
 echo "✅ Backup verification completed successfully."
+exit 0

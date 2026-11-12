@@ -10,7 +10,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_USER="${TARGET_USER:-nava}"
 TARGET_PASS="${TARGET_PASS:-nava}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-/home/${TARGET_USER}/workspace}"
-SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-350}"
+SESSION_DURATION_MINUTES="${SESSION_DURATION_MINUTES:-340}"
+if [ "${SESSION_DURATION_MINUTES}" -gt 345 ]; then
+    echo "⚠️ Warning: Requested duration (${SESSION_DURATION_MINUTES}m) exceeds safe 6-hour runner limit. Capping at 345m."
+    SESSION_DURATION_MINUTES=345
+fi
 
 # Cleanup handler on exit or signal
 cleanup() {
@@ -261,20 +265,29 @@ fi
 
 # 8. Session Duration Monitoring Loop
 SESSION_SECONDS=$((SESSION_DURATION_MINUTES * 60))
-echo "Session active for ${SESSION_DURATION_MINUTES} minutes (${SESSION_SECONDS}s)..."
+echo "Session active for ${SESSION_DURATION_MINUTES} minutes (${SESSION_SECONDS}s) — Safe 6-Hour Runner Budget..."
 
 START_TIME=$(date +%s)
+LAST_REPORT=0
 while true; do
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
 
     if [ "${ELAPSED}" -ge "${SESSION_SECONDS}" ]; then
-        echo "⏰ Session duration of ${SESSION_DURATION_MINUTES} minutes reached. Initiating clean shutdown..."
+        echo ""
+        echo "⏰ Session duration of ${SESSION_DURATION_MINUTES} minutes reached. Initiating clean graceful shutdown..."
         break
     fi
 
-    # Keep alive check
+    # Report status every 5 minutes (300 seconds)
+    if [ $((CURRENT_TIME - LAST_REPORT)) -ge 300 ]; then
+        LAST_REPORT="${CURRENT_TIME}"
+        REMAINING=$(( (SESSION_SECONDS - ELAPSED) / 60 ))
+        echo "[$(date -u +"%Y-%m-%d %H:%M:%SZ")] Ubuntu Studio Active — Remaining: ${REMAINING}m — SSH/XRDP listening on ${HOST_IP}"
+    fi
+
     sleep 15
 done
 
-echo "Ubuntu Studio session loop finished."
+echo "Ubuntu Studio session loop finished cleanly. Proceeding to safe shutdown."
+exit 0

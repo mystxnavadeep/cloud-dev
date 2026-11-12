@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       session_duration_minutes:
-        description: 'Session duration in minutes (max 360)'
+        description: 'Session duration in minutes (default: 340, max 345)'
         required: false
-        default: '350'
+        default: '340'
         type: string
       force_clean_restore:
         description: 'Initialize a clean workspace (ignore existing Google Drive backup)'
@@ -22,11 +22,12 @@ jobs:
   cloud-dev:
     name: Run DeepSeek Harness Cloud Environment
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 # Standard GitHub Actions job max duration (6 hours)
 
     env:
       WORKSPACE_DIR: ${{ github.workspace }}/workspace
-      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '350' }}
+      REMOTE_SUBDIR: cloud-dev/workspace
+      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '340' }}
       FORCE_CLEAN_RESTORE: ${{ github.event.inputs.force_clean_restore || 'false' }}
 
     steps:
@@ -110,6 +111,16 @@ jobs:
         run: |
           ./scripts/start-harness.sh
 
+      - name: Stop Background Synchronization Safely
+        if: always()
+        run: |
+          ./scripts/sync-workspace.sh --stop-daemon
+
+      - name: Save Session Recovery State
+        if: always()
+        run: |
+          ./scripts/sync-workspace.sh --save-recovery-state
+
       - name: Final Workspace Backup to Google Drive
         if: always()
         run: |
@@ -124,7 +135,7 @@ jobs:
         if: always()
         run: |
           if [ -f "${HOME}/.config/rclone/rclone.conf" ]; then
-            ./scripts/verify-backup.sh
+            ./scripts/verify-backup.sh "cloud-dev/workspace"
           else
             echo "rclone configuration not found; skipping verification."
           fi

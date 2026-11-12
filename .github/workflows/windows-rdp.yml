@@ -7,6 +7,11 @@ on:
         description: "Tailscale device hostname (default: windows-dev)"
         required: false
         default: "windows-dev"
+      session_duration_minutes:
+        description: "Session duration in minutes (default: 340, max: 345)"
+        required: false
+        default: "340"
+        type: string
 
 jobs:
   secure-rdp:
@@ -18,6 +23,9 @@ jobs:
       contents: write
       pull-requests: read
       issues: read
+
+    env:
+      SESSION_DURATION_MINUTES: ${{ github.event.inputs.session_duration_minutes || '340' }}
 
     steps:
       - name: Checkout Repository
@@ -36,7 +44,7 @@ jobs:
       - name: Configure Core RDP Settings
         shell: powershell
         run: |
-          # Enable Remote Desktop and disable Network Level Authentication (if needed)
+          # Enable Remote Desktop and disable Network Level Authentication
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
                              -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
@@ -44,14 +52,12 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "SecurityLayer" -Value 0 -Force
 
-          # Remove any existing rule with the same name to avoid duplication
+          # Remove existing rule and allow incoming TCP 3389
           netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null | Out-Null
-          
-          # Allow incoming connection on port 3389
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389 | Out-Null
 
-          # Restart the Remote Desktop service to ensure changes take effect
+          # Restart Remote Desktop service
           Restart-Service -Name TermService -Force
           Write-Host "✅ Core RDP settings configured."
 
@@ -60,11 +66,11 @@ jobs:
         run: |
           Add-Type -AssemblyName System.Security
           $charSet = @{
-              Upper   = [char[]](65..90)      # A-Z
-              Lower   = [char[]](97..122)     # a-z
-              Number  = [char[]](48..57)      # 0-9
+              Upper   = [char[]](65..90)
+              Lower   = [char[]](97..122)
+              Number  = [char[]](48..57)
               Special = ([char[]](33..47) + [char[]](58..64) +
-                         [char[]](91..96) + [char[]](123..126)) # Special characters
+                         [char[]](91..96) + [char[]](123..126))
           }
           $rawPassword = @()
           $rawPassword += $charSet.Upper | Get-Random -Count 4
@@ -178,7 +184,21 @@ jobs:
       - name: Maintain Connection & Display Studio Information
         shell: powershell
         run: |
-          & .\scripts\maintain-windows-studio.ps1
+          & .\scripts\maintain-windows-studio.ps1 -SessionDurationMinutes ${{ env.SESSION_DURATION_MINUTES }}
+
+      - name: Stop Background Synchronization Safely
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Stopping background auto-sync daemon..."
+          & .\scripts\sync-windows-workspace.ps1 -StopDaemon
+
+      - name: Save Session Recovery State
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Generating session recovery manifest and metadata..."
+          & .\scripts\sync-windows-workspace.ps1 -SaveRecoveryState
 
       - name: Final Workspace & Configuration Backup to Google Drive
         if: always()
@@ -186,3 +206,9 @@ jobs:
         run: |
           Write-Host "Executing final workspace synchronization to Google Drive..."
           & .\scripts\sync-windows-workspace.ps1 -Final
+
+      - name: Verify Workspace Backup Integrity
+        if: always()
+        shell: powershell
+        run: |
+          & .\scripts\verify-windows-backup.ps1 -RemoteSubdir "cloud-dev/windows-workspace"
